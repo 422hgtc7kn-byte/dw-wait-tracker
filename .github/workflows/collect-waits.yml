@@ -1,0 +1,103 @@
+name: Collect Wait Times
+
+on:
+  schedule:
+    # Every 30 minutes, 9am–11pm ET (13:00–03:00 UTC) every day
+    # GitHub cron is UTC. Disney parks open ~9am ET = 13:00 UTC, close ~11pm ET = 03:00 UTC next day.
+    - cron: '0,30 13-23 * * *'   # 1pm–11pm UTC (9am–7pm ET)
+    - cron: '0,30 0-3 * * *'     # midnight–3am UTC (8pm–11pm ET)
+  workflow_dispatch: # allow manual trigger from GitHub UI
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch & store Disney wait times
+        env:
+          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+        run: node -e "$(cat << 'SCRIPT'
+const PARKS = {
+  mk: '75ea578a-adc8-4116-a54d-dccb60765ef9',
+  ep: '47f90d2c-e191-4239-a466-5892ef59a88b',
+  hs: '288747d1-8b4f-4a64-867e-ea7c9b27bad8',
+  ak: '1c84a229-8862-4648-9c71-378ddd2c7693',
+};
+
+const SHOW_KEYWORDS = [
+  'show','theater','theatre','film','movie','presentation','stage','performance',
+  'symphony','philharmagic','enchantment','firework','parade','nighttime',
+  'happily ever after','epcot forever','luminous','indiana jones',
+  'beauty and the beast','frozen sing','lion king','finding nemo','animation','turtle talk'
+];
+
+function isShow(entity) {
+  if (entity.entityType === 'SHOW') return true;
+  const n = (entity.name || '').toLowerCase();
+  return SHOW_KEYWORDS.some(k => n.includes(k));
+}
+
+async function redis(commands) {
+  const url   = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) throw new Error('Missing Upstash env vars');
+  const res = await fetch(url + '/pipeline', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify(commands),
+  });
+  return res.json();
+}
+
+async function collectPark(entityId) {
+  const res = await fetch('https://api.themeparks.wiki/v1/entity/' + entityId + '/live');
+  if (!res.ok) throw new Error('API error ' + res.status + ' for ' + entityId);
+  const data = await res.json();
+  return (data.liveData || []).filter(e =>
+    (e.entityType === 'ATTRACTION') &&
+    !isShow(e) &&
+    e.status === 'OPERATING' &&
+    e.queue?.STANDBY?.waitTime != null
+  );
+}
+
+async function main() {
+  const now    = new Date();
+  const etHour = ((now.getUTCHours() - 5) + 24) % 24;
+  const dow    = now.getUTCDay();
+  const MAX    = 10;
+
+  console.log('Collecting at', now.toISOString(), '— ET hour:', etHour, 'DoW:', dow);
+
+  const commands = [];
+  let total = 0;
+
+  for (const [parkKey, entityId] of Object.entries(PARKS)) {
+    try {
+      const rides = await collectPark(entityId);
+      console.log(parkKey.toUpperCase() + ':', rides.length, 'rides operating');
+      for (const ride of rides) {
+        const wait = ride.queue.STANDBY.waitTime;
+        const key  = 'wt:' + ride.id + ':' + dow + ':' + etHour;
+        commands.push(['LPUSH', key, String(wait)]);
+        commands.push(['LTRIM', key, '0', String(MAX - 1)]);
+        total++;
+      }
+    } catch (err) {
+      console.error('Error fetching', parkKey + ':', err.message);
+    }
+    // Small delay between park fetches to be polite to the API
+    await new Promise(r => setTimeout(r, 1000));
+  }
+
+  if (commands.length > 0) {
+    await redis(commands);
+    console.log('Stored', total, 'snapshots (' + commands.length + ' Redis commands)');
+  } else {
+    console.log('No snapshots to store (parks may be closed)');
+  }
+}
+
+main().catch(e => { console.error(e); process.exit(1); });
+SCRIPT
+)"
