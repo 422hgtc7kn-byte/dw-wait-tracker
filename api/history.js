@@ -1,27 +1,44 @@
 // api/history.js
-// GET  /api/history?rideId=<id>          → returns stored snapshots for that ride
-// POST /api/history                       → body: { parkId, snapshots: [{id,name,wait,ts}] }
+// GET  /api/history?rideId=<id>   → hourly trend averages for that ride
+// POST /api/history               → body: { snapshots: [{id, wait, ts}] }
 //
-// Snapshots are bucketed by hour-of-day (0-23) and day-of-week (0=Sun…6=Sat).
-// We keep up to 10 readings per (rideId, dow, hod) slot → rolling average.
-// Vercel KV key scheme:  wt:<rideId>:<dow>:<hod>  → JSON array of wait values
-
-import { kv } from "@vercel/kv";
+// Uses Upstash Redis via HTTP (no SDK needed — just fetch + env vars).
+// Set these in Vercel environment variables:
+//   UPSTASH_REDIS_REST_URL
+//   UPSTASH_REDIS_REST_TOKEN
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
-const MAX_PER_SLOT = 10; // readings to keep per slot
+const MAX_PER_SLOT = 10;
+
+async function redis(command) {
+  const url  = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) throw new Error("Upstash env vars not set");
+  const res = await fetch(`${url}/${command.map(encodeURIComponent).join("/")}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await res.json();
+  return data.result;
+}
+
+async function redisPipeline(commands) {
+  const url   = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) throw new Error("Upstash env vars not set");
+  const res = await fetch(`${url}/pipeline`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(commands),
+  });
+  return await res.json();
+}
 
 export default async function handler(req, res) {
-  // Handle CORS preflight
-  if (req.method === "OPTIONS") {
-    res.writeHead(204, CORS);
-    return res.end();
-  }
-
+  if (req.method === "OPTIONS") { res.writeHead(204, CORS); return res.end(); }
   Object.entries(CORS).forEach(([k, v]) => res.setHeader(k, v));
 
   // ── GET: return trend data for one ride ───────────────────────────────────
@@ -30,37 +47,33 @@ export default async function handler(req, res) {
     if (!rideId) return res.status(400).json({ error: "Missing rideId" });
 
     try {
-      // Fetch all 7 days × 24 hours = 168 keys in parallel (batched)
+      // Build all 168 keys (7 days × 24 hours)
       const keys = [];
       for (let dow = 0; dow < 7; dow++)
         for (let hod = 0; hod < 24; hod++)
           keys.push(`wt:${rideId}:${dow}:${hod}`);
 
-      // KV mget supports up to 256 keys at once
-      const values = await kv.mget(...keys);
+      // Fetch all in one pipeline
+      const commands = keys.map(k => ["LRANGE", k, "0", String(MAX_PER_SLOT - 1)]);
+      const results  = await redisPipeline(commands);
 
-      // Build a 24-element array of averaged wait times (null if no data)
-      // We collapse across all days-of-week for the "typical day" view
-      // and also return per-dow data for future use
+      // Aggregate across all days into per-hour averages
       const byHour = Array.from({ length: 24 }, () => ({ sum: 0, count: 0 }));
-
-      values.forEach((val, i) => {
-        if (!val) return;
-        const readings = Array.isArray(val) ? val : [];
+      results.forEach(({ result }, i) => {
+        if (!result?.length) return;
         const hod = i % 24;
-        readings.forEach(w => {
-          byHour[hod].sum += w;
-          byHour[hod].count++;
+        result.forEach(v => {
+          const w = Number(v);
+          if (!isNaN(w)) { byHour[hod].sum += w; byHour[hod].count++; }
         });
       });
 
-      const hourlyAvg = byHour.map(({ sum, count }) =>
-        count > 0 ? Math.round(sum / count) : null
-      );
+      const hourlyAvg = byHour.map(({ sum, count }) => count > 0 ? Math.round(sum / count) : null);
+      const totalReadings = byHour.reduce((s, { count }) => s + count, 0);
 
-      return res.status(200).json({ rideId, hourlyAvg, totalReadings: values.reduce((s, v) => s + (v?.length || 0), 0) });
+      return res.status(200).json({ rideId, hourlyAvg, totalReadings });
     } catch (err) {
-      console.error("KV GET error:", err);
+      console.error("Redis GET error:", err);
       return res.status(500).json({ error: err.message });
     }
   }
@@ -68,30 +81,25 @@ export default async function handler(req, res) {
   // ── POST: store a batch of snapshots ─────────────────────────────────────
   if (req.method === "POST") {
     try {
-      const { snapshots } = req.body; // [{ id, wait, ts }]
-      if (!Array.isArray(snapshots) || snapshots.length === 0)
+      const { snapshots } = req.body;
+      if (!Array.isArray(snapshots) || !snapshots.length)
         return res.status(400).json({ error: "snapshots array required" });
 
-      const pipeline = kv.pipeline();
-
+      const commands = [];
       for (const { id, wait, ts } of snapshots) {
         if (wait == null || typeof wait !== "number") continue;
         const d = new Date(ts || Date.now());
-        // Park hours are Eastern; shift UTC → ET (approx, handles DST roughly)
-        const etOffset = -5; // EST; during EDT this is off by 1h — acceptable for trend bucketing
-        const etHour = ((d.getUTCHours() + etOffset) + 24) % 24;
-        const dow = d.getUTCDay();
-        const key = `wt:${id}:${dow}:${etHour}`;
-
-        // Push to list, trim to MAX_PER_SLOT
-        pipeline.lpush(key, wait);
-        pipeline.ltrim(key, 0, MAX_PER_SLOT - 1);
+        const etHour = ((d.getUTCHours() - 5) + 24) % 24;
+        const dow    = d.getUTCDay();
+        const key    = `wt:${id}:${dow}:${etHour}`;
+        commands.push(["LPUSH", key, String(wait)]);
+        commands.push(["LTRIM", key, "0", String(MAX_PER_SLOT - 1)]);
       }
 
-      await pipeline.exec();
+      if (commands.length) await redisPipeline(commands);
       return res.status(200).json({ stored: snapshots.length });
     } catch (err) {
-      console.error("KV POST error:", err);
+      console.error("Redis POST error:", err);
       return res.status(500).json({ error: err.message });
     }
   }
