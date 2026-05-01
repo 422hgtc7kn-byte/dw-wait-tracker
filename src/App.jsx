@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import TrendChart from "./TrendChart.jsx";
 
 const PARKS = {
-  mk: { name: "Magic Kingdom", entityId: "75ea578a-adc8-4116-a54d-dccb60765ef9", icon: "🏰", color: "#1a3a6b", accent: "#c8a951" },
-  ep: { name: "EPCOT",          entityId: "47f90d2c-e191-4239-a466-5892ef59a88b", icon: "🌍", color: "#1a5276", accent: "#58d68d" },
+  mk: { name: "Magic Kingdom",    entityId: "75ea578a-adc8-4116-a54d-dccb60765ef9", icon: "🏰", color: "#1a3a6b", accent: "#c8a951" },
+  ep: { name: "EPCOT",            entityId: "47f90d2c-e191-4239-a466-5892ef59a88b", icon: "🌍", color: "#1a5276", accent: "#58d68d" },
   hs: { name: "Hollywood Studios", entityId: "288747d1-8b4f-4a64-867e-ea7c9b27bad8", icon: "🎬", color: "#4a1a2c", accent: "#e74c3c" },
-  ak: { name: "Animal Kingdom",  entityId: "1c84a229-8862-4648-9c71-378ddd2c7693", icon: "🦁", color: "#1e4d2b", accent: "#f39c12" },
+  ak: { name: "Animal Kingdom",   entityId: "1c84a229-8862-4648-9c71-378ddd2c7693", icon: "🦁", color: "#1e4d2b", accent: "#f39c12" },
 };
 
 // ── localStorage ──────────────────────────────────────────────────────────────
@@ -28,7 +29,6 @@ function inferThrill(name) {
   return "low";
 }
 
-// Use the API's entityType when available; fall back to name heuristics
 function isShowEntity(entity) {
   if (entity.entityType === "SHOW") return true;
   const n = (entity.name || "").toLowerCase();
@@ -43,21 +43,44 @@ function isShowEntity(entity) {
     n.includes("turtle talk");
 }
 
-// Format a showtime ISO string to a friendly time like "2:30 PM"
 function fmtTime(iso) {
-  try {
-    return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  } catch { return iso; }
+  try { return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }); } catch { return iso; }
 }
-
-// Is this showtime in the future (or within the last 5 min)?
 function isUpcoming(iso) {
   try { return new Date(iso) > Date.now() - 5 * 60 * 1000; } catch { return false; }
 }
 
 const cardStyle = { background: "rgba(255,255,255,0.04)", borderRadius: 14, border: "1px solid rgba(255,255,255,0.08)" };
 
-// ── WaitBadge ─────────────────────────────────────────────────────────────────
+// ── Save snapshots to history API ─────────────────────────────────────────────
+async function saveHistory(rides) {
+  const snapshots = rides
+    .filter(r => r.status === "OPERATING" && r.queue?.STANDBY?.waitTime != null)
+    .map(r => ({ id: r.id, wait: r.queue.STANDBY.waitTime, ts: Date.now() }));
+  if (!snapshots.length) return;
+  try {
+    await fetch("/api/history", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ snapshots }),
+    });
+  } catch (e) {
+    console.warn("History save failed (KV not configured?):", e.message);
+  }
+}
+
+// ── Fetch trend data for one ride ─────────────────────────────────────────────
+async function fetchTrend(rideId) {
+  try {
+    const res = await fetch(`/api/history?rideId=${rideId}`);
+    if (!res.ok) return null;
+    return await res.json(); // { rideId, hourlyAvg, totalReadings }
+  } catch {
+    return null;
+  }
+}
+
+// ── Components ────────────────────────────────────────────────────────────────
 function WaitBadge({ minutes, status }) {
   if (status === "CLOSED" || status === "DOWN" || status === "REFURBISHMENT") {
     const label = status === "REFURBISHMENT" ? "Refurb" : status === "DOWN" ? "Down" : "Closed";
@@ -87,7 +110,6 @@ function SkeletonCard() {
   );
 }
 
-// ── Alert modal ───────────────────────────────────────────────────────────────
 function AlertModal({ ride, existing, onSave, onClose, accent }) {
   const [threshold, setThreshold] = useState(existing?.threshold ?? 30);
   return (
@@ -111,130 +133,39 @@ function AlertModal({ ride, existing, onSave, onClose, accent }) {
   );
 }
 
-// ── ShowCard ──────────────────────────────────────────────────────────────────
-function ShowCard({ show, accent, isFavorite, onToggleFavorite, isHidden, onToggleHidden }) {
-  const [expanded, setExpanded] = useState(false);
-
-  // showtimes from API: array of { startTime, endTime, type }
-  const showtimes = (show.showtimes || []).filter(st => isUpcoming(st.startTime));
-  const allTimes = (show.showtimes || []);
-  const nextShow = showtimes[0];
-  const isOperating = show.status === "OPERATING" || show.status === "INFO";
-
-  if (isHidden) return null;
-
-  return (
-    <div style={{
-      ...cardStyle,
-      padding: "14px 16px", marginBottom: 10,
-      border: isFavorite ? `1px solid ${accent}55` : cardStyle.border,
-      background: isFavorite ? "rgba(255,255,255,0.06)" : cardStyle.background,
-      opacity: show.status === "REFURBISHMENT" ? 0.45 : 1,
-    }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        {/* Left: name + next time */}
-        <div style={{ flex: 1, paddingRight: 10, cursor: "pointer" }} onClick={() => allTimes.length > 0 && setExpanded(e => !e)}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
-            {isFavorite && <span style={{ fontSize: 12 }}>⭐</span>}
-            <span style={{ color: "#fff", fontWeight: 700, fontSize: 15, fontFamily: "Georgia, serif" }}>{show.name}</span>
-          </div>
-          {/* Next showtime pill */}
-          {nextShow ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-              <span style={{ background: `${accent}22`, color: accent, borderRadius: 20, padding: "3px 10px", fontSize: 12, fontWeight: 700, fontFamily: "monospace", border: `1px solid ${accent}44` }}>
-                Next: {fmtTime(nextShow.startTime)}
-              </span>
-              {showtimes.length > 1 && (
-                <span style={{ color: "rgba(255,255,255,0.35)", fontSize: 11, fontFamily: "sans-serif" }}>
-                  +{showtimes.length - 1} more
-                </span>
-              )}
-            </div>
-          ) : allTimes.length > 0 ? (
-            <span style={{ color: "rgba(255,255,255,0.3)", fontSize: 11, fontFamily: "sans-serif" }}>No more shows today</span>
-          ) : (
-            <span style={{ color: "rgba(255,255,255,0.3)", fontSize: 11, fontFamily: "sans-serif" }}>
-              {isOperating ? "Check park app for times" : show.status === "REFURBISHMENT" ? "Under refurbishment" : "Closed today"}
-            </span>
-          )}
-        </div>
-        {/* Right: fav button + status */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-          <button onClick={e => { e.stopPropagation(); onToggleFavorite(); }}
-            style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, padding: 2, opacity: isFavorite ? 1 : 0.3 }}>
-            {isFavorite ? "⭐" : "☆"}
-          </button>
-          {show.status === "REFURBISHMENT" && (
-            <span style={{ background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.4)", borderRadius: 20, padding: "3px 10px", fontSize: 11, fontFamily: "monospace" }}>Refurb</span>
-          )}
-          {show.status === "CLOSED" && (
-            <span style={{ background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.4)", borderRadius: 20, padding: "3px 10px", fontSize: 11, fontFamily: "monospace" }}>Closed</span>
-          )}
-        </div>
-      </div>
-
-      {/* Expanded: full schedule */}
-      {expanded && allTimes.length > 0 && (
-        <div style={{ marginTop: 14, borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 12 }}>
-          <div style={{ color: accent, fontSize: 11, fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>
-            Today's Schedule
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
-            {allTimes.map((st, i) => {
-              const past = !isUpcoming(st.startTime);
-              return (
-                <span key={i} style={{
-                  background: past ? "rgba(255,255,255,0.05)" : `${accent}22`,
-                  color: past ? "rgba(255,255,255,0.3)" : accent,
-                  border: `1px solid ${past ? "rgba(255,255,255,0.08)" : accent + "44"}`,
-                  borderRadius: 20, padding: "4px 12px",
-                  fontSize: 13, fontWeight: 700, fontFamily: "monospace",
-                  textDecoration: past ? "line-through" : "none",
-                }}>
-                  {fmtTime(st.startTime)}
-                </span>
-              );
-            })}
-          </div>
-          {show.lastUpdated && (
-            <div style={{ color: "rgba(255,255,255,0.2)", fontSize: 10, fontFamily: "sans-serif", marginBottom: 10 }}>
-              Updated: {new Date(show.lastUpdated).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-            </div>
-          )}
-          <button onClick={() => onToggleHidden()} style={{
-            width: "100%", padding: 8, borderRadius: 8,
-            border: "1px solid rgba(255,255,255,0.1)", background: "transparent",
-            color: "rgba(255,255,255,0.35)", fontFamily: "sans-serif", fontSize: 11,
-            cursor: "pointer", textAlign: "center",
-          }}>
-            Hide from list
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── RideCard ──────────────────────────────────────────────────────────────────
+// ── RideCard with trend chart ─────────────────────────────────────────────────
 function RideCard({ ride, accent, isFavorite, onToggleFavorite, alertThreshold, onSetAlert, isHidden, onToggleHidden }) {
   const [expanded, setExpanded] = useState(false);
+  const [trendData, setTrendData] = useState(null);
+  const [trendLoading, setTrendLoading] = useState(false);
   const thrill = inferThrill(ride.name);
   const isOperating = ride.status === "OPERATING";
   const wait = ride.queue?.STANDBY?.waitTime ?? null;
   const hasAlert = alertThreshold != null;
 
+  // Load trend data when card is first expanded
+  useEffect(() => {
+    if (!expanded || trendData !== null || trendLoading) return;
+    setTrendLoading(true);
+    fetchTrend(ride.id).then(data => {
+      setTrendData(data);
+      setTrendLoading(false);
+    });
+  }, [expanded, ride.id, trendData, trendLoading]);
+
   if (isHidden) return null;
 
   return (
     <div style={{
-      ...cardStyle,
-      padding: "14px 16px", marginBottom: 10,
+      ...cardStyle, padding: "14px 16px", marginBottom: 10,
       border: isFavorite ? `1px solid ${accent}55` : cardStyle.border,
       background: isFavorite ? "rgba(255,255,255,0.06)" : cardStyle.background,
       opacity: ride.status === "REFURBISHMENT" ? 0.45 : 1,
     }}>
+      {/* Main row */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div style={{ flex: 1, paddingRight: 10, cursor: isOperating ? "pointer" : "default" }} onClick={() => isOperating && setExpanded(e => !e)}>
+        <div style={{ flex: 1, paddingRight: 10, cursor: isOperating ? "pointer" : "default" }}
+          onClick={() => isOperating && setExpanded(e => !e)}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
             {isFavorite && <span style={{ fontSize: 12 }}>⭐</span>}
             <span style={{ color: "#fff", fontWeight: 700, fontSize: 15, fontFamily: "Georgia, serif" }}>{ride.name}</span>
@@ -255,22 +186,114 @@ function RideCard({ ride, accent, isFavorite, onToggleFavorite, alertThreshold, 
         </div>
       </div>
 
+      {/* Expanded panel */}
       {expanded && isOperating && (
         <div style={{ marginTop: 14, borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 12 }}>
+
+          {/* Lightning Lane */}
           {ride.queue?.LIGHTNING_LANE?.waitTime != null && (
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
               <span style={{ color: "rgba(255,255,255,0.6)", fontSize: 12, fontFamily: "sans-serif" }}>⚡ Lightning Lane</span>
               <WaitBadge minutes={ride.queue.LIGHTNING_LANE.waitTime} status="OPERATING" />
             </div>
           )}
-          {ride.queue?.PAID_RETURN_TIME && <div style={{ marginBottom: 10 }}><span style={{ color: accent, fontSize: 11, fontFamily: "sans-serif" }}>🎟 Individual Lightning Lane available</span></div>}
-          <div style={{ color: "rgba(255,255,255,0.35)", fontSize: 11, fontFamily: "sans-serif" }}>
-            💡 {thrill === "high" ? "Use Lightning Lane or queue right at park open for shortest waits." : "This ride loads quickly — check the line as you walk past."}
+
+          {/* Trend chart */}
+          {trendLoading && (
+            <div style={{ height: 90, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <span style={{ color: "rgba(255,255,255,0.2)", fontSize: 12, fontFamily: "sans-serif" }}>Loading trend…</span>
+            </div>
+          )}
+          {!trendLoading && (
+            <TrendChart
+              hourlyAvg={trendData?.hourlyAvg ?? null}
+              thrillLevel={thrill}
+              accent={accent}
+              currentWait={wait}
+            />
+          )}
+
+          {/* Tip */}
+          <div style={{ color: "rgba(255,255,255,0.3)", fontSize: 11, fontFamily: "sans-serif", marginTop: 12 }}>
+            💡 {thrill === "high" ? "Queue right at rope drop or use Lightning Lane during peak hours." : "This ride moves quickly — check the line as you walk past."}
           </div>
-          <button onClick={() => onToggleHidden()} style={{ marginTop: 12, width: "100%", padding: 8, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "transparent", color: "rgba(255,255,255,0.35)", fontFamily: "sans-serif", fontSize: 11, cursor: "pointer" }}>
+
+          {/* Hide */}
+          <button onClick={() => onToggleHidden()} style={{ marginTop: 10, width: "100%", padding: 8, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "transparent", color: "rgba(255,255,255,0.3)", fontFamily: "sans-serif", fontSize: 11, cursor: "pointer" }}>
             Hide this ride from list
           </button>
-          {ride.lastUpdated && <div style={{ color: "rgba(255,255,255,0.2)", fontSize: 10, fontFamily: "sans-serif", marginTop: 8 }}>Updated: {new Date(ride.lastUpdated).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>}
+
+          {ride.lastUpdated && <div style={{ color: "rgba(255,255,255,0.2)", fontSize: 10, fontFamily: "sans-serif", marginTop: 6 }}>Updated: {new Date(ride.lastUpdated).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── ShowCard ──────────────────────────────────────────────────────────────────
+function ShowCard({ show, accent, isFavorite, onToggleFavorite, isHidden, onToggleHidden }) {
+  const [expanded, setExpanded] = useState(false);
+  const showtimes = (show.showtimes || []).filter(st => isUpcoming(st.startTime));
+  const allTimes  = (show.showtimes || []);
+  const nextShow  = showtimes[0];
+  const isOperating = show.status === "OPERATING" || show.status === "INFO";
+  if (isHidden) return null;
+
+  return (
+    <div style={{
+      ...cardStyle, padding: "14px 16px", marginBottom: 10,
+      border: isFavorite ? `1px solid ${accent}55` : cardStyle.border,
+      background: isFavorite ? "rgba(255,255,255,0.06)" : cardStyle.background,
+      opacity: show.status === "REFURBISHMENT" ? 0.45 : 1,
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div style={{ flex: 1, paddingRight: 10, cursor: "pointer" }} onClick={() => allTimes.length > 0 && setExpanded(e => !e)}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
+            {isFavorite && <span style={{ fontSize: 12 }}>⭐</span>}
+            <span style={{ color: "#fff", fontWeight: 700, fontSize: 15, fontFamily: "Georgia, serif" }}>{show.name}</span>
+          </div>
+          {nextShow ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              <span style={{ background: `${accent}22`, color: accent, borderRadius: 20, padding: "3px 10px", fontSize: 12, fontWeight: 700, fontFamily: "monospace", border: `1px solid ${accent}44` }}>
+                Next: {fmtTime(nextShow.startTime)}
+              </span>
+              {showtimes.length > 1 && <span style={{ color: "rgba(255,255,255,0.35)", fontSize: 11, fontFamily: "sans-serif" }}>+{showtimes.length - 1} more</span>}
+            </div>
+          ) : allTimes.length > 0 ? (
+            <span style={{ color: "rgba(255,255,255,0.3)", fontSize: 11, fontFamily: "sans-serif" }}>No more shows today</span>
+          ) : (
+            <span style={{ color: "rgba(255,255,255,0.3)", fontSize: 11, fontFamily: "sans-serif" }}>
+              {show.status === "REFURBISHMENT" ? "Under refurbishment" : isOperating ? "Check park app for times" : "Closed today"}
+            </span>
+          )}
+        </div>
+        <button onClick={e => { e.stopPropagation(); onToggleFavorite(); }}
+          style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, padding: 2, opacity: isFavorite ? 1 : 0.3 }}>
+          {isFavorite ? "⭐" : "☆"}
+        </button>
+      </div>
+
+      {expanded && allTimes.length > 0 && (
+        <div style={{ marginTop: 14, borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 12 }}>
+          <div style={{ color: accent, fontSize: 11, fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Today's Schedule</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+            {allTimes.map((st, i) => {
+              const past = !isUpcoming(st.startTime);
+              return (
+                <span key={i} style={{
+                  background: past ? "rgba(255,255,255,0.05)" : `${accent}22`,
+                  color: past ? "rgba(255,255,255,0.3)" : accent,
+                  border: `1px solid ${past ? "rgba(255,255,255,0.08)" : accent + "44"}`,
+                  borderRadius: 20, padding: "4px 12px", fontSize: 13, fontWeight: 700, fontFamily: "monospace",
+                  textDecoration: past ? "line-through" : "none",
+                }}>{fmtTime(st.startTime)}</span>
+              );
+            })}
+          </div>
+          {show.lastUpdated && <div style={{ color: "rgba(255,255,255,0.2)", fontSize: 10, fontFamily: "sans-serif", marginBottom: 10 }}>Updated: {new Date(show.lastUpdated).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>}
+          <button onClick={() => onToggleHidden()} style={{ width: "100%", padding: 8, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "transparent", color: "rgba(255,255,255,0.35)", fontFamily: "sans-serif", fontSize: 11, cursor: "pointer" }}>
+            Hide from list
+          </button>
         </div>
       )}
     </div>
@@ -302,10 +325,10 @@ function CrowdMeter({ rides }) {
 // ── Main App ──────────────────────────────────────────────────────────────────
 export default function App() {
   const [activePark, setActivePark] = useState("mk");
-  const [activeTab, setActiveTab] = useState("rides"); // "rides" | "shows"
-  const [ridesData, setRidesData] = useState({});
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [activeTab, setActiveTab]   = useState("rides");
+  const [ridesData, setRidesData]   = useState({});
+  const [loading, setLoading]       = useState(false);
+  const [error, setError]           = useState(null);
   const [lastRefresh, setLastRefresh] = useState(null);
 
   const [favorites, setFavorites] = useState(() => loadPref("dwt_favorites", {}));
@@ -340,6 +363,11 @@ export default function App() {
       const all = (data.liveData || []).filter(e => e.entityType === "ATTRACTION" || e.entityType === "SHOW");
       setRidesData(prev => ({ ...prev, [parkKey]: all }));
       setLastRefresh(new Date());
+
+      // ── Save snapshot to history (fire-and-forget) ──
+      const rideOnly = all.filter(e => !isShowEntity(e));
+      saveHistory(rideOnly);
+
     } catch {
       setError("Couldn't load live wait times. Tap ↻ to retry.");
     } finally {
@@ -357,22 +385,18 @@ export default function App() {
       const wait = ride.queue?.STANDBY?.waitTime;
       if (wait == null || wait >= threshold) return;
       setFiredAlerts(prev => ({ ...prev, [ride.id]: true }));
-      if ("Notification" in window && Notification.permission === "granted") {
+      if ("Notification" in window && Notification.permission === "granted")
         new Notification(`🎢 ${ride.name}`, { body: `Wait is now ${wait} min — under your ${threshold} min alert!`, icon: "/favicon.ico" });
-      }
     });
   }, [ridesData, alerts, firedAlerts]);
 
   const park = PARKS[activePark];
-  const allEntities = ridesData[activePark] || [];
-
-  // Split into rides vs shows using API entityType + name heuristics
+  const allEntities  = ridesData[activePark] || [];
   const rideEntities = allEntities.filter(e => !isShowEntity(e));
   const showEntities = allEntities.filter(e => isShowEntity(e));
-
-  const openRides = rideEntities.filter(r => r.status === "OPERATING");
-  const waitTimes = openRides.map(r => r.queue?.STANDBY?.waitTime).filter(w => w != null);
-  const avgWait = waitTimes.length ? Math.round(waitTimes.reduce((a, b) => a + b, 0) / waitTimes.length) : null;
+  const openRides    = rideEntities.filter(r => r.status === "OPERATING");
+  const waitTimes    = openRides.map(r => r.queue?.STANDBY?.waitTime).filter(w => w != null);
+  const avgWait      = waitTimes.length ? Math.round(waitTimes.reduce((a, b) => a + b, 0) / waitTimes.length) : null;
   const shortestRide = [...openRides].filter(r => r.queue?.STANDBY?.waitTime != null).sort((a, b) => a.queue.STANDBY.waitTime - b.queue.STANDBY.waitTime)[0];
 
   const filteredRides = rideEntities
@@ -393,7 +417,6 @@ export default function App() {
       return (a.queue?.STANDBY?.waitTime ?? 999) - (b.queue?.STANDBY?.waitTime ?? 999);
     });
 
-  // Shows sorted: ones with upcoming times first, then by next showtime
   const filteredShows = showEntities
     .filter(s => !hidden[s.id])
     .filter(s => filter !== "favorites" || favorites[s.id])
@@ -409,7 +432,6 @@ export default function App() {
     });
 
   const hiddenCount = Object.values(hidden).filter(Boolean).length;
-
   const toggleFavorite = id => setFavorites(prev => ({ ...prev, [id]: !prev[id] }));
   const toggleHidden   = id => setHidden(prev => ({ ...prev, [id]: true }));
   const saveAlert = (rideId, threshold) => {
@@ -456,21 +478,21 @@ export default function App() {
               background: activePark === id ? park.accent : "rgba(255,255,255,0.07)",
               color: activePark === id ? "#000" : "rgba(255,255,255,0.55)",
               border: "none", borderRadius: 20, padding: "5px 12px", fontSize: 11,
-              fontWeight: activePark === id ? 800 : 400, cursor: "pointer", whiteSpace: "nowrap",
-              fontFamily: "sans-serif", transition: "all 0.2s",
+              fontWeight: activePark === id ? 800 : 400, cursor: "pointer",
+              whiteSpace: "nowrap", fontFamily: "sans-serif", transition: "all 0.2s",
             }}>{p.icon} {id.toUpperCase()}</button>
           ))}
         </div>
 
-        {/* Rides / Shows tab switcher */}
+        {/* Rides / Shows tab */}
         <div style={{ display: "flex", gap: 6, marginTop: 12 }}>
           {[{ id: "rides", label: "🎢 Rides" }, { id: "shows", label: "🎭 Shows" }].map(t => (
             <button key={t.id} onClick={() => setActiveTab(t.id)} style={{
               flex: 1, padding: "8px 0", borderRadius: 10, border: "none",
               background: activeTab === t.id ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.05)",
               color: activeTab === t.id ? "#fff" : "rgba(255,255,255,0.4)",
-              fontFamily: "sans-serif", fontWeight: activeTab === t.id ? 700 : 400,
-              fontSize: 13, cursor: "pointer", transition: "all 0.2s",
+              fontFamily: "sans-serif", fontWeight: activeTab === t.id ? 700 : 400, fontSize: 13,
+              cursor: "pointer", transition: "all 0.2s",
               borderBottom: activeTab === t.id ? `2px solid ${park.accent}` : "2px solid transparent",
             }}>{t.label}</button>
           ))}
@@ -490,7 +512,7 @@ export default function App() {
                 <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
                   {[
                     { label: "Avg Wait", value: avgWait != null ? `${avgWait}m` : "—", icon: "⏱" },
-                    { label: "Open Rides", value: openRides.length, icon: "🎢" },
+                    { label: "Open", value: openRides.length, icon: "🎢" },
                     { label: "Shortest", value: shortestRide ? `${shortestRide.queue.STANDBY.waitTime}m` : "—", icon: "✨" },
                   ].map((s, i) => (
                     <div key={i} style={{ flex: 1, ...cardStyle, padding: "10px 12px", textAlign: "center" }}>
@@ -508,7 +530,8 @@ export default function App() {
                         background: filter === f.id ? park.accent : "rgba(255,255,255,0.07)",
                         color: filter === f.id ? "#000" : "rgba(255,255,255,0.55)",
                         border: "none", borderRadius: 20, padding: "4px 11px", fontSize: 11,
-                        fontWeight: filter === f.id ? 800 : 400, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "sans-serif",
+                        fontWeight: filter === f.id ? 800 : 400, cursor: "pointer",
+                        whiteSpace: "nowrap", fontFamily: "sans-serif",
                       }}>{f.label}</button>
                     ))}
                   </div>
@@ -538,7 +561,7 @@ export default function App() {
             {!loading && filteredRides.length > 0 && (
               <>
                 <div style={{ color: "rgba(255,255,255,0.3)", fontSize: 11, fontFamily: "sans-serif", marginBottom: 10, textTransform: "uppercase", letterSpacing: 1 }}>
-                  {filteredRides.length} rides · ☆ fav · 🔔 alert · tap to expand
+                  {filteredRides.length} rides · ☆ fav · 🔔 alert · tap for trend →
                 </div>
                 {filteredRides.map(ride => (
                   <RideCard key={ride.id} ride={ride} accent={park.accent}
@@ -563,10 +586,9 @@ export default function App() {
           <>
             {!loading && showEntities.length > 0 && (
               <>
-                {/* Shows today count */}
                 <div style={{ ...cardStyle, padding: "12px 16px", marginBottom: 16, display: "flex", gap: 10 }}>
                   {[
-                    { label: "Total Shows", value: showEntities.length, icon: "🎭" },
+                    { label: "Total", value: showEntities.length, icon: "🎭" },
                     { label: "With Times", value: showEntities.filter(s => (s.showtimes || []).length > 0).length, icon: "🕐" },
                     { label: "Upcoming", value: showEntities.filter(s => (s.showtimes || []).some(st => isUpcoming(st.startTime))).length, icon: "▶️" },
                   ].map((s, i) => (
@@ -577,7 +599,6 @@ export default function App() {
                     </div>
                   ))}
                 </div>
-
                 <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
                   {[{ id: "all", label: "All" }, { id: "favorites", label: "⭐ Favs" }].map(f => (
                     <button key={f.id} onClick={() => setFilter(f.id)} style={{
@@ -624,7 +645,7 @@ export default function App() {
               Arrive 30 min before park open. Hit top rides first, then use Lightning Lane during peak hours. Return to headliners after 7pm for shorter queues.
             </div>
             <div style={{ color: "rgba(255,255,255,0.2)", fontSize: 10, fontFamily: "sans-serif", marginTop: 8 }}>
-              Powered by ThemeParks.wiki · Data refreshed every 5 min by source
+              Powered by ThemeParks.wiki · Trend data builds with each visit
             </div>
           </div>
         )}
