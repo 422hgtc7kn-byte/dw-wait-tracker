@@ -1,11 +1,11 @@
 // scripts/collect-waits.mjs
-// Run by GitHub Actions every 30 minutes to collect wait times into Upstash
+// Run by GitHub Actions every 30 minutes to collect wait times + crowd levels into Upstash
 
 const PARKS = {
-  mk: '75ea578a-adc8-4116-a54d-dccb60765ef9',
-  ep: '47f90d2c-e191-4239-a466-5892ef59a88b',
-  hs: '288747d1-8b4f-4a64-867e-ea7c9b27bad8',
-  ak: '1c84a229-8862-4648-9c71-378ddd2c7693',
+  mk: { entityId: '75ea578a-adc8-4116-a54d-dccb60765ef9' },
+  ep: { entityId: '47f90d2c-e191-4239-a466-5892ef59a88b' },
+  hs: { entityId: '288747d1-8b4f-4a64-867e-ea7c9b27bad8' },
+  ak: { entityId: '1c84a229-8862-4648-9c71-378ddd2c7693' },
 };
 
 const SHOW_KEYWORDS = [
@@ -52,22 +52,39 @@ async function main() {
   const now    = new Date();
   const etHour = ((now.getUTCHours() - 5) + 24) % 24;
   const dow    = now.getUTCDay();
-  const MAX    = 10;
+  const MAX_RIDE   = 10;
+  const MAX_CROWD  = 20;
 
   console.log('Collecting at', now.toISOString(), '| ET hour:', etHour, '| DoW:', dow);
 
   const commands = [];
-  let total = 0;
+  let rideTotal  = 0;
+  let crowdTotal = 0;
 
-  for (const [parkKey, entityId] of Object.entries(PARKS)) {
+  for (const [parkKey, { entityId }] of Object.entries(PARKS)) {
     try {
       const rides = await collectPark(parkKey, entityId);
+
+      // ── Per-ride wait time snapshots ──
       for (const ride of rides) {
         const key = `wt:${ride.id}:${dow}:${etHour}`;
         commands.push(['LPUSH', key, String(ride.queue.STANDBY.waitTime)]);
-        commands.push(['LTRIM', key, '0', String(MAX - 1)]);
-        total++;
+        commands.push(['LTRIM', key, '0', String(MAX_RIDE - 1)]);
+        rideTotal++;
       }
+
+      // ── Park-wide crowd level (avg wait across all operating rides) ──
+      if (rides.length > 0) {
+        const avgWait = Math.round(
+          rides.reduce((s, r) => s + r.queue.STANDBY.waitTime, 0) / rides.length
+        );
+        const crowdKey = `crowd:${parkKey}:${dow}:${etHour}`;
+        commands.push(['LPUSH', crowdKey, String(avgWait)]);
+        commands.push(['LTRIM', crowdKey, '0', String(MAX_CROWD - 1)]);
+        crowdTotal++;
+        console.log(parkKey.toUpperCase() + ' crowd avg:', avgWait, 'min');
+      }
+
     } catch (err) {
       console.error('Error fetching', parkKey + ':', err.message);
     }
@@ -76,7 +93,7 @@ async function main() {
 
   if (commands.length > 0) {
     await redisPipeline(commands);
-    console.log('✅ Stored', total, 'snapshots');
+    console.log(`✅ Stored ${rideTotal} ride snapshots + ${crowdTotal} crowd snapshots`);
   } else {
     console.log('No snapshots stored (parks may be closed)');
   }
