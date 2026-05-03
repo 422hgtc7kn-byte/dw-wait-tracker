@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { getETHour, getETDay } from "./etHour.js";
 
 const FONT = "'Inter', sans-serif";
 const DAYS_SHORT = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
@@ -209,7 +210,7 @@ function HourlyChart({ data, parkId, selectedDow, setSelectedDow, todayDow, T, d
   const max    = Math.max(...merged.map(m => m.value), 10);
   const barW   = INNER_W / HOUR_LABELS.length;
   const gap    = barW * 0.18;
-  const nowET  = ((new Date().getUTCHours() - 5) + 24) % 24;
+  const nowET  = getETHour();
   const nowIdx = nowET - PARK_OPEN;
   const inPark = selectedDow === todayDow && nowIdx >= 0 && nowIdx < HOUR_LABELS.length;
   const xLabels = HOUR_LABELS.map((l, i) => i % 2 === 0 ? l.replace("am","").replace("pm","") : "");
@@ -373,8 +374,8 @@ export default function CrowdTrend({ parkId, accent, accentLight, accentDark, T,
   const [loading, setLoading]     = useState(true);
   const [expanded, setExpanded]   = useState(false);
   const [view, setView]           = useState("forecast");
-  const [selectedDow, setSelectedDow] = useState(new Date().getDay());
-  const todayDow = new Date().getDay();
+  const [selectedDow, setSelectedDow] = useState(getETDay());
+  const todayDow = getETDay();
 
   useEffect(() => {
     setLoading(true);

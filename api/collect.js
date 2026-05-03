@@ -51,8 +51,8 @@ export default async function handler(req, res) {
   }
 
   const now    = new Date();
-  const etHour = ((now.getUTCHours() - 5) + 24) % 24;
-  const dow    = now.getUTCDay();
+  const etStr = now.toLocaleString("en-US", { timeZone: "America/New_York", hour: "numeric", hour12: false }); const etHour = parseInt(etStr, 10);
+  const dow = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" })).getDay();
   const MAX_RIDE  = 10;
   const MAX_CROWD = 20;
 

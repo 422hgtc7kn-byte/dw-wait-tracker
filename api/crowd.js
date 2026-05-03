@@ -89,8 +89,8 @@ export default async function handler(req, res) {
       if (!parkId || avgWait == null) return res.status(400).json({ error: "parkId and avgWait required" });
 
       const d      = new Date(ts || Date.now());
-      const etHour = ((d.getUTCHours() - 5) + 24) % 24;
-      const dow    = d.getUTCDay();
+      const etStr = new Date(ts || Date.now()).toLocaleString("en-US", { timeZone: "America/New_York", hour: "numeric", hour12: false }); const etHour = parseInt(etStr, 10);
+      const dow = new Date(d.toLocaleString("en-US", { timeZone: "America/New_York" })).getDay();
       const key    = `crowd:${parkId}:${dow}:${etHour}`;
 
       await redisPipeline([

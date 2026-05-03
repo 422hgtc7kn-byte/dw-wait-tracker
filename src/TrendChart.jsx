@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { HOUR_LABELS, PARK_OPEN_HOUR, mergeWithTypical, bestHours } from "./trends.js";
+import { getETHour, getETDay } from "./etHour.js";
 
 const FONT = "'Inter', sans-serif";
 const DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
@@ -14,7 +15,7 @@ function barColor(wait, isReal, dark) {
 }
 
 export default function TrendChart({ hourlyAvg, dowHourlyAvg, thrillLevel, accent, accentLight, currentWait, T, dark }) {
-  const todayDow = new Date().getDay();
+  const todayDow = getETDay();
   const [selectedDow, setSelectedDow] = useState(todayDow);
 
   // Pick the right data source: per-DOW if available, else fall back to all-days avg
@@ -26,7 +27,7 @@ export default function TrendChart({ hourlyAvg, dowHourlyAvg, thrillLevel, accen
   const max       = Math.max(...merged, 10);
   const barW      = INNER_W / HOUR_LABELS.length;
   const gap       = barW * 0.2;
-  const nowET     = ((new Date().getUTCHours() - 5) + 24) % 24;
+  const nowET     = getETHour();
   const nowIdx    = nowET - PARK_OPEN_HOUR;
   const inPark    = selectedDow === todayDow && nowIdx >= 0 && nowIdx < HOUR_LABELS.length;
   const realCount = realMask.filter(Boolean).length;
