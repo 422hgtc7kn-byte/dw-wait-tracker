@@ -37,9 +37,9 @@ async function redisPipeline(commands) {
 }
 
 export default async function handler(req, res) {
-  // Only allow POST (and OPTIONS for preflight)
+  // Accept GET, POST, or OPTIONS — so any cron service can call this
   if (req.method === 'OPTIONS') return res.status(204).end();
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (req.method !== 'POST' && req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
   // Verify secret token — set COLLECT_SECRET in Vercel env vars and QStash headers
   const secret = process.env.COLLECT_SECRET;

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import TrendChart from "./TrendChart.jsx";
 import CrowdTrend from "./CrowdTrend.jsx";
+import AuthScreen from "./AuthScreen.jsx";
 
 // ── Theme tokens ──────────────────────────────────────────────────────────────
 const LIGHT = {
@@ -422,8 +423,31 @@ function FilterBtn({ active, onClick, children, accent, T }) {
   );
 }
 
+// ── Profile sync helpers ──────────────────────────────────────────────────────
+async function loadProfile(token) {
+  try {
+    const res = await fetch("/api/profile", { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.profile || null;
+  } catch { return null; }
+}
+
+async function saveProfile(token, profile) {
+  try {
+    await fetch("/api/profile", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(profile),
+    });
+  } catch {}
+}
+
 // ── Main App ──────────────────────────────────────────────────────────────────
 export default function App() {
+  const [token, setToken]           = useState(() => localStorage.getItem("dwt_token") || null);
+  const [username, setUsername]     = useState(() => localStorage.getItem("dwt_username") || null);
+  const [profileLoaded, setProfileLoaded] = useState(false);
   const [dark, setDark]             = useState(() => loadPref("dwt_dark", false));
   const [activePark, setActivePark] = useState("mk");
   const [activeTab, setActiveTab]   = useState("rides");
@@ -451,6 +475,48 @@ export default function App() {
   useEffect(() => { savePref("dwt_alerts",    alerts);    }, [alerts]);
   useEffect(() => { savePref("dwt_hidden",    hidden);    }, [hidden]);
   useEffect(() => { document.body.style.background = T.bg; }, [T.bg]);
+
+  // Load profile from server on login
+  useEffect(() => {
+    if (!token || profileLoaded) return;
+    loadProfile(token).then(profile => {
+      if (profile) {
+        if (profile.favorites) setFavorites(profile.favorites);
+        if (profile.alerts)    setAlerts(profile.alerts);
+        if (profile.hidden)    setHidden(profile.hidden);
+        if (profile.dark != null) setDark(profile.dark);
+        if (profile.sortBy)   setSortBy(profile.sortBy);
+      }
+      setProfileLoaded(true);
+    });
+  }, [token, profileLoaded]);
+
+  // Sync profile to server whenever prefs change (debounced)
+  const syncTimer = useRef(null);
+  useEffect(() => {
+    if (!token || !profileLoaded) return;
+    clearTimeout(syncTimer.current);
+    syncTimer.current = setTimeout(() => {
+      saveProfile(token, { favorites, alerts, hidden, dark, sortBy });
+    }, 1500);
+  }, [token, profileLoaded, favorites, alerts, hidden, dark, sortBy]);
+
+  const handleLogin = (newToken, newUsername) => {
+    setToken(newToken);
+    setUsername(newUsername);
+    setProfileLoaded(false); // trigger profile reload
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("dwt_token");
+    localStorage.removeItem("dwt_username");
+    setToken(null);
+    setUsername(null);
+    setProfileLoaded(false);
+  };
+
+  // Show auth screen if not logged in
+  if (!token) return <AuthScreen onLogin={handleLogin} dark={dark} />;
 
   const fetchParkData = useCallback(async (parkKey) => {
     const p = PARKS[parkKey];
@@ -578,6 +644,11 @@ export default function App() {
             <div style={{ fontSize:28,fontWeight:900,color:"#fff",letterSpacing:-0.5 }}>{park.icon} {park.name}</div>
           </div>
           <div style={{ display:"flex",gap:8,alignItems:"center" }}>
+            {/* User pill */}
+            <button onClick={handleLogout} title="Tap to sign out"
+              style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:20,padding:"6px 12px",color:"#fff",fontFamily:FONT,fontSize:11,fontWeight:600,cursor:"pointer" }}>
+              👤 {username}
+            </button>
             {/* Map */}
             <button onClick={()=>setShowMap(true)} title="Park map"
               style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"8px 10px",color:"#fff",fontSize:16,cursor:"pointer" }}>🗺</button>
