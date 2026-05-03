@@ -74,6 +74,8 @@ const THRILL_OVERRIDES = {
   "na'vi river journey": "low",
   "kilimanjaro safaris": "low",
   "millennium falcon": "high",
+  "casey jr splash 'n' soak station": "low",
+
 };
 
 function loadPref(key, fallback) {
