@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import TrendChart from "./TrendChart.jsx";
 import CrowdTrend from "./CrowdTrend.jsx";
 import AuthScreen from "./AuthScreen.jsx";
+import { getRideDetails, fmtHeight } from "./rideDetails.js";
 
 // ── Profile sync helpers ──────────────────────────────────────────────────────
 async function loadProfile(token) {
@@ -74,8 +75,6 @@ const THRILL_OVERRIDES = {
   "na'vi river journey": "low",
   "kilimanjaro safaris": "low",
   "millennium falcon": "high",
-  "casey jr splash 'n' soak station": "low",
-
 };
 
 function loadPref(key, fallback) {
@@ -299,16 +298,17 @@ function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleF
   const [trendData, setTrendData] = useState(null);
   const [trendLoading, setTrendLoading] = useState(false);
   const thrill = inferThrill(ride.name);
+  const details = getRideDetails(ride.name);
   const isOperating = ride.status === "OPERATING";
   const wait = ride.queue?.STANDBY?.waitTime ?? null;
   const hasAlert = alertThreshold != null;
   const favBg = dark ? accentDark : accentLight;
 
   useEffect(() => {
-    if (!expanded || trendData !== null || trendLoading) return;
+    if (!expanded || trendLoading) return;
     setTrendLoading(true);
     fetchTrend(ride.id).then(data => { setTrendData(data); setTrendLoading(false); });
-  }, [expanded, ride.id, trendData, trendLoading]);
+  }, [expanded, ride.id]);
 
   if (isHidden) return null;
 
@@ -319,6 +319,21 @@ function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleF
           <div style={{ color:T.text, fontWeight:600, fontSize:15, fontFamily:FONT, marginBottom:5 }}>{ride.name}</div>
           <div style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
             <ThrillBadge level={thrill} dark={dark} />
+            {details?.height && (
+              <span style={{ fontSize:10, color:dark?"#93c5fd":"#1e40af", background:dark?"#1e3a5f":"#dbeafe", borderRadius:6, padding:"2px 7px", fontFamily:FONT, fontWeight:600 }}>
+                📏 {details.height}"
+              </span>
+            )}
+            {!details?.height && details && (
+              <span style={{ fontSize:10, color:dark?"#86efac":"#166534", background:dark?"#052e16":"#dcfce7", borderRadius:6, padding:"2px 7px", fontFamily:FONT, fontWeight:600 }}>
+                📏 Any height
+              </span>
+            )}
+            {details?.a11y?.map((tag, i) => (
+              <span key={i} style={{ fontSize:10, color:dark?"#d8b4fe":"#6b21a8", background:dark?"#2e1065":"#f3e8ff", borderRadius:6, padding:"2px 7px", fontFamily:FONT, fontWeight:500 }}>
+                ♿ {tag}
+              </span>
+            ))}
             {ride.queue?.SINGLE_RIDER != null && <span style={{ fontSize:10, color:dark?"#c4b5fd":"#7c3aed", background:dark?"#2e1065":"#ede9fe", borderRadius:6, padding:"2px 7px", fontFamily:FONT, fontWeight:600 }}>Single Rider</span>}
             {hasAlert && <span style={{ fontSize:10, color:dark?"#93c5fd":"#1d4ed8", background:dark?"#1e3a5f":"#dbeafe", borderRadius:6, padding:"2px 7px", fontFamily:FONT, fontWeight:600 }}>🔔 &lt;{alertThreshold}m</span>}
           </div>
@@ -353,6 +368,24 @@ function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleF
           <div style={{ color:T.textMuted,fontSize:12,fontFamily:FONT,marginTop:12,lineHeight:1.5 }}>
             💡 {thrill==="high"?"Queue right at rope drop or use Lightning Lane during peak hours.":"This ride moves quickly — check the line as you walk past."}
           </div>
+          {details && (
+            <div style={{ marginTop:12, padding:"10px 12px", borderRadius:10, background:T.bg, border:`1px solid ${T.border}` }}>
+              {details.height ? (
+                <div style={{ color:T.textSub, fontSize:12, fontFamily:FONT, marginBottom:6 }}>
+                  📏 <strong>Height requirement:</strong> {fmtHeight(details.height)} minimum
+                </div>
+              ) : (
+                <div style={{ color:T.textSub, fontSize:12, fontFamily:FONT, marginBottom:details.a11y?.length ? 6 : 0 }}>
+                  📏 <strong>No height requirement</strong>
+                </div>
+              )}
+              {details.a11y?.map((tag, i) => (
+                <div key={i} style={{ color:T.textSub, fontSize:12, fontFamily:FONT, marginTop:4 }}>
+                  ♿ {tag}
+                </div>
+              ))}
+            </div>
+          )}
           <button onClick={() => onToggleHidden()} style={{ marginTop:10,width:"100%",padding:9,borderRadius:10,border:`1px solid ${T.border}`,background:T.bg,color:T.textMuted,fontFamily:FONT,fontSize:12,cursor:"pointer" }}>
             Hide this ride
           </button>
@@ -458,6 +491,7 @@ export default function App() {
   const [error, setError]           = useState(null);
   const [lastRefresh, setLastRefresh] = useState(null);
   const [showMap, setShowMap]       = useState(false);
+  const [schedules, setSchedules]   = useState({});
 
   const [favorites, setFavorites]   = useState(() => loadPref("dwt_favorites", {}));
   const [alerts, setAlerts]         = useState(() => loadPref("dwt_alerts", {}));
@@ -557,6 +591,15 @@ export default function App() {
 
   useEffect(() => { if (!ridesData[activePark]) fetchParkData(activePark); }, [activePark, fetchParkData, ridesData]);
 
+  // Fetch park schedule when park changes
+  useEffect(() => {
+    if (schedules[activePark]) return;
+    fetch(`/api/schedule?parkId=${activePark}`)
+      .then(r => r.json())
+      .then(data => setSchedules(prev => ({ ...prev, [activePark]: data })))
+      .catch(() => {});
+  }, [activePark, schedules]);
+
   // Reset fired state when alert thresholds change
   useEffect(() => { firedAlerts.current = {}; }, [alerts]);
 
@@ -653,36 +696,59 @@ export default function App() {
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4 }}>
           <div>
             <div style={{ fontSize:11,color:"rgba(255,255,255,0.6)",textTransform:"uppercase",letterSpacing:2,fontWeight:600,marginBottom:4 }}>Walt Disney World</div>
-            <div style={{ fontSize:28,fontWeight:900,color:"#fff",letterSpacing:-0.5 }}>{park.icon} {park.name}</div>
+            <div style={{ fontSize:26,fontWeight:900,color:"#fff",letterSpacing:-0.5 }}>{park.icon} {park.name}</div>
           </div>
-          <div style={{ display:"flex",gap:8,alignItems:"center" }}>
-            {/* User pill */}
-            <button onClick={handleLogout} title="Tap to sign out"
-              style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:20,padding:"6px 12px",color:"#fff",fontFamily:FONT,fontSize:11,fontWeight:600,cursor:"pointer" }}>
-              👤 {username}
-            </button>
-            {/* Map */}
-            <button onClick={()=>setShowMap(true)} title="Park map"
-              style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"8px 10px",color:"#fff",fontSize:16,cursor:"pointer" }}>🗺</button>
-            {/* Disney App link */}
-            <a href="https://disneyworld.disney.go.com/app/" target="_blank" rel="noreferrer"
-              style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"8px 10px",color:"#fff",fontSize:16,cursor:"pointer",textDecoration:"none",display:"inline-flex",alignItems:"center" }}
-              title="Open My Disney Experience">🏰</a>
-            {/* Dark mode */}
-            <button onClick={()=>setDark(d=>!d)}
-              style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"8px 10px",color:"#fff",fontSize:16,cursor:"pointer" }}>
-              {dark?"☀️":"🌙"}
-            </button>
-            {/* Refresh */}
-            <button onClick={()=>fetchParkData(activePark)} disabled={loading}
-              style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"8px 12px",color:loading?"rgba(255,255,255,0.4)":"#fff",fontSize:18,cursor:loading?"default":"pointer" }}>
-              {loading?"⟳":"↻"}
-            </button>
-          </div>
+          {/* Refresh on its own — always visible */}
+          <button onClick={()=>fetchParkData(activePark)} disabled={loading}
+            style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"8px 12px",color:loading?"rgba(255,255,255,0.4)":"#fff",fontSize:18,cursor:loading?"default":"pointer",flexShrink:0 }}>
+            {loading?"⟳":"↻"}
+          </button>
         </div>
 
-        <div style={{ color:"rgba(255,255,255,0.5)",fontSize:11,marginBottom:16 }}>
+        <div style={{ color:"rgba(255,255,255,0.5)",fontSize:11,marginBottom:10 }}>
           {loading?"Fetching live data…":lastRefresh?`Live · Updated ${lastRefresh.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}`:"Loading…"}
+        </div>
+
+        {/* Park hours */}
+        {(() => {
+          const s = schedules[activePark]?.schedule;
+          if (!s) return null;
+          const open  = s.openingTime  ? new Date(s.openingTime).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})  : null;
+          const close = s.closingTime ? new Date(s.closingTime).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}) : null;
+          const special = schedules[activePark]?.special || [];
+          if (!open && !close) return null;
+          return (
+            <div style={{ marginBottom:10 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+                <span style={{ background:"rgba(255,255,255,0.15)", borderRadius:20, padding:"4px 12px", color:"#fff", fontSize:12, fontWeight:600, fontFamily:FONT }}>
+                  🕘 {open} – {close}
+                </span>
+                {special.map((sp, i) => (
+                  <span key={i} style={{ background:"rgba(255,215,0,0.2)", borderRadius:20, padding:"4px 12px", color:"#ffd700", fontSize:11, fontWeight:600, fontFamily:FONT, border:"1px solid rgba(255,215,0,0.3)" }}>
+                    ✨ {sp.type?.replace(/_/g," ")}: {sp.openingTime ? new Date(sp.openingTime).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}) : ""}
+                    {sp.closingTime ? ` – ${new Date(sp.closingTime).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}` : ""}
+                  </span>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Secondary actions — second row, all fit comfortably */}
+        <div style={{ display:"flex",gap:6,alignItems:"center",marginBottom:14 }}>
+          <button onClick={handleLogout}
+            style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:20,padding:"5px 12px",color:"#fff",fontFamily:FONT,fontSize:11,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap" }}>
+            👤 {username}
+          </button>
+          <div style={{ flex:1 }} />
+          <button onClick={()=>setShowMap(true)}
+            style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>🗺</button>
+          <a href="https://disneyworld.disney.go.com/app/" target="_blank" rel="noreferrer"
+            style={{ background:"rgba(255,255,255,0.15)",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,textDecoration:"none",display:"inline-flex",alignItems:"center" }}>🏰</a>
+          <button onClick={()=>setDark(d=>!d)}
+            style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>
+            {dark?"☀️":"🌙"}
+          </button>
         </div>
 
         {/* Park switcher */}
