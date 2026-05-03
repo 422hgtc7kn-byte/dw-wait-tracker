@@ -181,7 +181,7 @@ function ForecastView({ data, parkId, todayDow, T, dark, accent, accentLight, ac
         </div>
       </div>
 
-      {!day.isReal && totalReadings === 0 && (
+      {totalReadings === 0 && (
         <div style={{ color:T.textMuted, fontSize:10, fontFamily:FONT, marginTop:10, textAlign:"center" }}>
           Predictions improve as real data is collected over time.
         </div>
