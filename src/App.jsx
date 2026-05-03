@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import TrendChart from "./TrendChart.jsx";
 import CrowdTrend from "./CrowdTrend.jsx";
-import AuthScreen from "./AuthScreen.jsx";
+
 
 // ── Theme tokens ──────────────────────────────────────────────────────────────
 const LIGHT = {
