@@ -75,6 +75,19 @@ const THRILL_OVERRIDES = {
   "na'vi river journey": "low",
   "kilimanjaro safaris": "low",
   "millennium falcon": "high",
+  "casey jr": "low",
+  "pirate's adventure": "low",
+  "pirates adventure": "low",
+  "cinderella castle": "low",
+  "main street vehicles": "low",
+  "main street electrical": "low",
+  "a pirate": "low",
+  "treasures of the seven seas": "low",
+  "alien swirling": "low",
+  "saucers": "low",
+  "star wars launch bay": "low",
+  "turtle talk": "low",
+  "turtle": "low",
 };
 
 function loadPref(key, fallback) {
@@ -497,6 +510,8 @@ export default function App() {
   const [alerts, setAlerts]         = useState(() => loadPref("dwt_alerts", {}));
   const [hidden, setHidden]         = useState(() => loadPref("dwt_hidden", {}));
   const [filter, setFilter]         = useState("all");
+  const [heightFilter, setHeightFilter] = useState("all");
+  const [a11yFilter, setA11yFilter]     = useState("all");
   // sortBy: "wait_asc" | "wait_desc" | "name_asc" | "name_desc"
   const [sortBy, setSortBy]         = useState("wait_asc");
   const [alertModal, setAlertModal] = useState(null);
@@ -618,9 +633,14 @@ export default function App() {
       if (af!==bf) return af-bf;
       if (sortBy==="name_asc")  return a.name.localeCompare(b.name);
       if (sortBy==="name_desc") return b.name.localeCompare(a.name);
-      const aOpen=a.status==="OPERATING"?0:1, bOpen=b.status==="OPERATING"?0:1;
-      if (aOpen!==bOpen) return aOpen-bOpen;
-      const wa=a.queue?.STANDBY?.waitTime??999, wb=b.queue?.STANDBY?.waitTime??999;
+      // Open rides with wait times always before closed/no-wait rides
+      const aHasWait = a.status==="OPERATING" && a.queue?.STANDBY?.waitTime != null;
+      const bHasWait = b.status==="OPERATING" && b.queue?.STANDBY?.waitTime != null;
+      if (aHasWait && !bHasWait) return -1;
+      if (!aHasWait && bHasWait) return 1;
+      if (!aHasWait && !bHasWait) return a.name.localeCompare(b.name);
+      const wa = a.queue.STANDBY.waitTime;
+      const wb = b.queue.STANDBY.waitTime;
       return sortBy==="wait_desc" ? wb-wa : wa-wb;
     });
   }
@@ -631,6 +651,20 @@ export default function App() {
       if (filter==="high")   return inferThrill(r.name)==="high";
       if (filter==="medium") return inferThrill(r.name)==="medium";
       if (filter==="low")    return inferThrill(r.name)==="low";
+      return true;
+    }).filter(r => {
+      const details = getRideDetails(r.name);
+      if (heightFilter === "any")     return !details?.height;
+      if (heightFilter === "under40") return !details?.height || details.height <= 40;
+      if (heightFilter === "under44") return !details?.height || details.height <= 44;
+      if (heightFilter === "under48") return !details?.height || details.height <= 48;
+      return true;
+    }).filter(r => {
+      if (a11yFilter === "all") return true;
+      const details = getRideDetails(r.name);
+      if (a11yFilter === "wheelchair") return details?.a11y?.some(t => t.toLowerCase().includes("wheelchair"));
+      if (a11yFilter === "transfer")   return !details?.a11y?.some(t => t.toLowerCase().includes("must transfer"));
+      if (a11yFilter === "no_loose")   return !details?.a11y?.some(t => t.toLowerCase().includes("loose"));
       return true;
     })
   );
@@ -787,6 +821,33 @@ export default function App() {
                 <div style={{ display:"flex",gap:6,marginBottom:10,overflowX:"auto",paddingBottom:2 }}>
                   {[{id:"all",label:"All"},{id:"favorites",label:"⭐ Favs"},{id:"high",label:"🔥 Thrill"},{id:"medium",label:"⚡ Moderate"},{id:"low",label:"🌿 Mild"}].map(f=>(
                     <FilterBtn key={f.id} active={filter===f.id} onClick={()=>setFilter(f.id)} accent={park.accent} T={T}>{f.label}</FilterBtn>
+                  ))}
+                </div>
+
+                {/* Height filter */}
+                <div style={{ display:"flex",gap:6,marginBottom:8,overflowX:"auto",paddingBottom:2 }}>
+                  <span style={{ color:T.textMuted,fontSize:11,fontFamily:FONT,alignSelf:"center",whiteSpace:"nowrap",flexShrink:0 }}>📏</span>
+                  {[
+                    {id:"all",     label:"Any height"},
+                    {id:"any",     label:"No req."},
+                    {id:"under40", label:'Under 40"'},
+                    {id:"under44", label:'Under 44"'},
+                    {id:"under48", label:'Under 48"'},
+                  ].map(f=>(
+                    <FilterBtn key={f.id} active={heightFilter===f.id} onClick={()=>setHeightFilter(f.id)} accent={park.accent} T={T}>{f.label}</FilterBtn>
+                  ))}
+                </div>
+
+                {/* Accessibility filter */}
+                <div style={{ display:"flex",gap:6,marginBottom:10,overflowX:"auto",paddingBottom:2 }}>
+                  <span style={{ color:T.textMuted,fontSize:11,fontFamily:FONT,alignSelf:"center",whiteSpace:"nowrap",flexShrink:0 }}>♿</span>
+                  {[
+                    {id:"all",        label:"All access"},
+                    {id:"wheelchair", label:"Wheelchair OK"},
+                    {id:"transfer",   label:"No transfer req."},
+                    {id:"no_loose",   label:"No loose articles"},
+                  ].map(f=>(
+                    <FilterBtn key={f.id} active={a11yFilter===f.id} onClick={()=>setA11yFilter(f.id)} accent={park.accent} T={T}>{f.label}</FilterBtn>
                   ))}
                 </div>
                 <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14 }}>
