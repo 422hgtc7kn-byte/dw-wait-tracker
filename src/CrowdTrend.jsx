@@ -371,7 +371,8 @@ function DayChart({ data, parkId, todayDow, T, dark, accent, accentLight, accent
 export default function CrowdTrend({ parkId, accent, accentLight, accentDark, T, dark }) {
   const [data, setData]           = useState(null);
   const [loading, setLoading]     = useState(true);
-  const [view, setView]           = useState("forecast"); // "forecast" | "day" | "hour"
+  const [expanded, setExpanded]   = useState(false);
+  const [view, setView]           = useState("forecast");
   const [selectedDow, setSelectedDow] = useState(new Date().getDay());
   const todayDow = new Date().getDay();
 
@@ -381,6 +382,12 @@ export default function CrowdTrend({ parkId, accent, accentLight, accentDark, T,
     fetchCrowdData(parkId).then(d => { setData(d); setLoading(false); });
   }, [parkId]);
 
+  // Compute today's crowd level for the collapsed summary
+  const todayData = dowAvgFromData(data, parkId, todayDow);
+  const todayLevel = getLevel(todayData.value);
+  const todayColor = crowdColor(todayData.value, dark);
+  const todayBg    = crowdBg(todayData.value, dark);
+
   const VIEWS = [
     { id:"forecast", label:"7-Day" },
     { id:"day",      label:"By Day" },
@@ -388,50 +395,72 @@ export default function CrowdTrend({ parkId, accent, accentLight, accentDark, T,
   ];
 
   return (
-    <div style={{ background:T.surface, borderRadius:16, border:`1px solid ${T.border}`, padding:"16px", marginBottom:14 }}>
-      {/* Header */}
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
-        <div style={{ color:T.text, fontWeight:700, fontSize:14, fontFamily:FONT }}>📊 Crowd Forecast</div>
-        {loading && <div style={{ color:T.textMuted, fontSize:11, fontFamily:FONT }}>Loading…</div>}
-      </div>
-
-      {/* View toggle */}
-      <div style={{ display:"flex", gap:4, marginBottom:14, background:T.bg, borderRadius:10, padding:3 }}>
-        {VIEWS.map(v => (
-          <button key={v.id} onClick={() => setView(v.id)} style={{
-            flex:1, padding:"6px 0", borderRadius:8, border:"none",
-            background: view===v.id ? T.surface : "transparent",
-            color: view===v.id ? T.text : T.textMuted,
-            fontFamily:FONT, fontWeight: view===v.id ? 700 : 400,
-            fontSize:12, cursor:"pointer",
-            boxShadow: view===v.id ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
-            transition:"all 0.15s",
-          }}>{v.label}</button>
-        ))}
-      </div>
-
-      {/* Level legend */}
-      <div style={{ display:"flex", gap:8, marginBottom:14, flexWrap:"wrap" }}>
-        {LEVELS.map((l, i) => (
-          <div key={i} style={{ display:"flex", alignItems:"center", gap:4 }}>
-            <span style={{ fontSize:10 }}>{l.icon}</span>
-            <span style={{ color:T.textMuted, fontSize:10, fontFamily:FONT }}>{l.label}</span>
-          </div>
-        ))}
-        <div style={{ display:"flex", alignItems:"center", gap:4, marginLeft:"auto" }}>
-          <div style={{ width:8, height:8, borderRadius:2, background:T.textMuted, opacity:0.3 }} />
-          <span style={{ color:T.textMuted, fontSize:10, fontFamily:FONT }}>Estimated</span>
+    <div style={{ background:T.surface, borderRadius:16, border:`1px solid ${T.border}`, marginBottom:14, overflow:"hidden" }}>
+      {/* Header row — always visible, tap to expand/collapse */}
+      <div
+        onClick={() => setExpanded(e => !e)}
+        style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"14px 16px", cursor:"pointer" }}
+      >
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <span style={{ color:T.text, fontWeight:700, fontSize:14, fontFamily:FONT }}>📊 Crowd Forecast</span>
+          {!loading && (
+            <span style={{
+              background: todayBg,
+              color: todayColor,
+              borderRadius:20, padding:"3px 10px",
+              fontSize:11, fontWeight:700, fontFamily:FONT,
+              border:`1px solid ${todayColor}44`,
+            }}>
+              {todayLevel.icon} Today: {todayLevel.label}
+            </span>
+          )}
+          {loading && <span style={{ color:T.textMuted, fontSize:11, fontFamily:FONT }}>Loading…</span>}
         </div>
+        <span style={{ color:T.textMuted, fontSize:16, lineHeight:1 }}>{expanded ? "▲" : "▼"}</span>
       </div>
 
-      {!loading && view === "forecast" && (
-        <ForecastView data={data} parkId={parkId} todayDow={todayDow} T={T} dark={dark} accent={accent} accentLight={accentLight} accentDark={accentDark} />
-      )}
-      {!loading && view === "day" && (
-        <DayChart data={data} parkId={parkId} todayDow={todayDow} T={T} dark={dark} accent={accent} accentLight={accentLight} accentDark={accentDark} />
-      )}
-      {!loading && view === "hour" && (
-        <HourlyChart data={data} parkId={parkId} selectedDow={selectedDow} setSelectedDow={setSelectedDow} todayDow={todayDow} T={T} dark={dark} accent={accent} accentLight={accentLight} accentDark={accentDark} />
+      {/* Expanded content */}
+      {expanded && (
+        <div style={{ padding:"0 16px 16px" }}>
+          {/* View toggle */}
+          <div style={{ display:"flex", gap:4, marginBottom:14, background:T.bg, borderRadius:10, padding:3 }}>
+            {VIEWS.map(v => (
+              <button key={v.id} onClick={() => setView(v.id)} style={{
+                flex:1, padding:"6px 0", borderRadius:8, border:"none",
+                background: view===v.id ? T.surface : "transparent",
+                color: view===v.id ? T.text : T.textMuted,
+                fontFamily:FONT, fontWeight: view===v.id ? 700 : 400,
+                fontSize:12, cursor:"pointer",
+                boxShadow: view===v.id ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+                transition:"all 0.15s",
+              }}>{v.label}</button>
+            ))}
+          </div>
+
+          {/* Level legend */}
+          <div style={{ display:"flex", gap:8, marginBottom:14, flexWrap:"wrap" }}>
+            {LEVELS.map((l, i) => (
+              <div key={i} style={{ display:"flex", alignItems:"center", gap:4 }}>
+                <span style={{ fontSize:10 }}>{l.icon}</span>
+                <span style={{ color:T.textMuted, fontSize:10, fontFamily:FONT }}>{l.label}</span>
+              </div>
+            ))}
+            <div style={{ display:"flex", alignItems:"center", gap:4, marginLeft:"auto" }}>
+              <div style={{ width:8, height:8, borderRadius:2, background:T.textMuted, opacity:0.3 }} />
+              <span style={{ color:T.textMuted, fontSize:10, fontFamily:FONT }}>Estimated</span>
+            </div>
+          </div>
+
+          {!loading && view === "forecast" && (
+            <ForecastView data={data} parkId={parkId} todayDow={todayDow} T={T} dark={dark} accent={accent} accentLight={accentLight} accentDark={accentDark} />
+          )}
+          {!loading && view === "day" && (
+            <DayChart data={data} parkId={parkId} todayDow={todayDow} T={T} dark={dark} accent={accent} accentLight={accentLight} accentDark={accentDark} />
+          )}
+          {!loading && view === "hour" && (
+            <HourlyChart data={data} parkId={parkId} selectedDow={selectedDow} setSelectedDow={setSelectedDow} todayDow={todayDow} T={T} dark={dark} accent={accent} accentLight={accentLight} accentDark={accentDark} />
+          )}
+        </div>
       )}
     </div>
   );
