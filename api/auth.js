@@ -1,11 +1,7 @@
 // api/auth.js
-// POST /api/auth/register  { username, pin }  → { ok, token }
-// POST /api/auth/login     { username, pin }  → { ok, token }
-// POST /api/auth/verify    { token }          → { ok, username }
-//
-// PIN is hashed with SHA-256 before storage. Token is a signed random string.
-// Stored in Upstash as:
-//   user:<username>  → { username, pinHash, token }
+// POST { action:"register", username, pin } → { ok, token, username }
+// POST { action:"login",    username, pin } → { ok, token, username }
+// POST { action:"verify",   token }         → { ok, username }
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -32,16 +28,29 @@ async function redisGet(key) {
     headers: { Authorization: `Bearer ${token}` },
   });
   const data = await res.json();
-  return data.result ? JSON.parse(data.result) : null;
+  if (!data.result) return null;
+  // result is already a string — parse once
+  try { return JSON.parse(data.result); } catch { return data.result; }
 }
 
 async function redisSet(key, value) {
   const url   = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-  await fetch(`${url}/set/${encodeURIComponent(key)}`, {
+  // Use pipeline SET so value is stored as a proper JSON string (single encode)
+  const res = await fetch(`${url}/pipeline`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify(JSON.stringify(value)),
+    body: JSON.stringify([["SET", key, JSON.stringify(value)]]),
+  });
+  return res.json();
+}
+
+async function redisDel(key) {
+  const url   = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  await fetch(`${url}/del/${encodeURIComponent(key)}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
   });
 }
 
@@ -55,8 +64,6 @@ export default async function handler(req, res) {
   // ── Verify token ──────────────────────────────────────────────────────────
   if (action === "verify") {
     if (!token) return res.status(400).json({ ok: false, error: "Token required" });
-    // Scan by token — search all users with this token
-    // Store reverse lookup: token:<token> → username
     const uname = await redisGet(`token:${token}`);
     if (!uname) return res.status(401).json({ ok: false, error: "Invalid token" });
     return res.status(200).json({ ok: true, username: uname });
@@ -67,14 +74,14 @@ export default async function handler(req, res) {
     if (!username || !pin) return res.status(400).json({ ok: false, error: "Username and PIN required" });
     const clean = username.trim().toLowerCase().replace(/[^a-z0-9_]/g, "");
     if (clean.length < 2) return res.status(400).json({ ok: false, error: "Username must be at least 2 characters" });
-    if (!/^\d{4,8}$/.test(pin)) return res.status(400).json({ ok: false, error: "PIN must be 4-8 digits" });
+    if (!/^\d{4,8}$/.test(pin)) return res.status(400).json({ ok: false, error: "PIN must be 4–8 digits" });
 
     const existing = await redisGet(`user:${clean}`);
     if (existing) return res.status(409).json({ ok: false, error: "Username already taken" });
 
-    const pinHash  = await sha256(pin + clean); // salt with username
+    const pinHash  = await sha256(pin + clean);
     const newToken = randomToken();
-    await redisSet(`user:${clean}`, { username: clean, pinHash, token: newToken });
+    await redisSet(`user:${clean}`, { username: clean, pinHash });
     await redisSet(`token:${newToken}`, clean);
     return res.status(200).json({ ok: true, token: newToken, username: clean });
   }
@@ -84,16 +91,23 @@ export default async function handler(req, res) {
     if (!username || !pin) return res.status(400).json({ ok: false, error: "Username and PIN required" });
     const clean = username.trim().toLowerCase().replace(/[^a-z0-9_]/g, "");
     const user  = await redisGet(`user:${clean}`);
-    if (!user) return res.status(401).json({ ok: false, error: "Invalid username or PIN" });
+    if (!user || !user.pinHash) return res.status(401).json({ ok: false, error: "Invalid username or PIN" });
 
     const pinHash = await sha256(pin + clean);
     if (pinHash !== user.pinHash) return res.status(401).json({ ok: false, error: "Invalid username or PIN" });
 
-    // Rotate token on login
     const newToken = randomToken();
-    await redisSet(`user:${clean}`, { ...user, token: newToken });
     await redisSet(`token:${newToken}`, clean);
     return res.status(200).json({ ok: true, token: newToken, username: clean });
+  }
+
+  // ── Clear user (dev only — remove in production) ──────────────────────────
+  if (action === "clear") {
+    if (!username) return res.status(400).json({ ok: false, error: "Username required" });
+    const clean = username.trim().toLowerCase().replace(/[^a-z0-9_]/g, "");
+    await redisDel(`user:${clean}`);
+    await redisDel(`profile:${clean}`);
+    return res.status(200).json({ ok: true, cleared: clean });
   }
 
   return res.status(400).json({ ok: false, error: "Invalid action" });
