@@ -824,31 +824,21 @@ export default function App() {
                   ))}
                 </div>
 
-                {/* Height filter */}
-                <div style={{ display:"flex",gap:6,marginBottom:8,overflowX:"auto",paddingBottom:2 }}>
-                  <span style={{ color:T.textMuted,fontSize:11,fontFamily:FONT,alignSelf:"center",whiteSpace:"nowrap",flexShrink:0 }}>📏</span>
-                  {[
-                    {id:"all",     label:"Any height"},
-                    {id:"any",     label:"No req."},
-                    {id:"under40", label:'Under 40"'},
-                    {id:"under44", label:'Under 44"'},
-                    {id:"under48", label:'Under 48"'},
-                  ].map(f=>(
-                    <FilterBtn key={f.id} active={heightFilter===f.id} onClick={()=>setHeightFilter(f.id)} accent={park.accent} T={T}>{f.label}</FilterBtn>
-                  ))}
-                </div>
-
-                {/* Accessibility filter */}
-                <div style={{ display:"flex",gap:6,marginBottom:10,overflowX:"auto",paddingBottom:2 }}>
-                  <span style={{ color:T.textMuted,fontSize:11,fontFamily:FONT,alignSelf:"center",whiteSpace:"nowrap",flexShrink:0 }}>♿</span>
-                  {[
-                    {id:"all",        label:"All access"},
-                    {id:"wheelchair", label:"Wheelchair OK"},
-                    {id:"transfer",   label:"No transfer req."},
-                    {id:"no_loose",   label:"No loose articles"},
-                  ].map(f=>(
-                    <FilterBtn key={f.id} active={a11yFilter===f.id} onClick={()=>setA11yFilter(f.id)} accent={park.accent} T={T}>{f.label}</FilterBtn>
-                  ))}
+                {/* Height + Accessibility dropdowns */}
+                <div style={{ display:"flex", gap:8, marginBottom:10 }}>
+                  <select value={heightFilter} onChange={e=>setHeightFilter(e.target.value)} style={{ flex:1, background:T.surface, color:T.textSub, border:`1px solid ${T.border}`, borderRadius:10, padding:"7px 10px", fontSize:12, fontFamily:FONT, cursor:"pointer" }}>
+                    <option value="all">📏 Any height</option>
+                    <option value="any">📏 No requirement</option>
+                    <option value="under40">📏 Under 40"</option>
+                    <option value="under44">📏 Under 44"</option>
+                    <option value="under48">📏 Under 48"</option>
+                  </select>
+                  <select value={a11yFilter} onChange={e=>setA11yFilter(e.target.value)} style={{ flex:1, background:T.surface, color:T.textSub, border:`1px solid ${T.border}`, borderRadius:10, padding:"7px 10px", fontSize:12, fontFamily:FONT, cursor:"pointer" }}>
+                    <option value="all">♿ All rides</option>
+                    <option value="wheelchair">♿ Wheelchair OK</option>
+                    <option value="transfer">♿ No transfer req.</option>
+                    <option value="no_loose">♿ Loose articles OK</option>
+                  </select>
                 </div>
                 <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14 }}>
                   {hiddenCount>0 ? (

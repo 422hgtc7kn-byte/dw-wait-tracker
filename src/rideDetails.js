@@ -6,7 +6,7 @@ export const RIDE_DETAILS = {
   // ── Magic Kingdom ─────────────────────────────────────────────────────────
   "seven dwarfs mine train":      { height: 38, a11y: ["Must Transfer", "No Loose Articles"] },
   "space mountain":               { height: 44, a11y: ["Must Transfer", "No Loose Articles"] },
-  "big thunder mountain":         { height: 40, a11y: ["Must Transfer"] },
+  "big thunder mountain":         { height: 38, a11y: ["Must Transfer"] },
   "splash mountain":              { height: 40, a11y: ["Must Transfer", "May Remain in Wheelchair"] },
   "tron lightcycle":              { height: 48, a11y: ["Must Transfer", "No Loose Articles"] },
   "barnstormer":                  { height: 35, a11y: ["Must Transfer"] },
@@ -21,6 +21,19 @@ export const RIDE_DETAILS = {
   "people mover":                 { height: null, a11y: ["May Remain in Wheelchair"] },
   "astro orbiter":                { height: null, a11y: ["Must Transfer"] },
   "mad tea party":                { height: null, a11y: ["May Remain in Wheelchair"] },
+  "it's a small world":           { height: null, a11y: ["May Remain in Wheelchair"] },
+  "small world":                  { height: null, a11y: ["May Remain in Wheelchair"] },
+  "jungle cruise":                { height: null, a11y: ["May Remain in Wheelchair"] },
+  "swiss family treehouse":       { height: null, a11y: [] },
+  "walt disney world railroad":   { height: null, a11y: ["May Remain in Wheelchair"] },
+  "liberty square riverboat":     { height: null, a11y: ["May Remain in Wheelchair"] },
+  "hall of presidents":           { height: null, a11y: ["May Remain in Wheelchair"] },
+  "country bear":                 { height: null, a11y: ["May Remain in Wheelchair"] },
+  "enchanted tiki room":          { height: null, a11y: ["May Remain in Wheelchair"] },
+  "monsters inc":                 { height: null, a11y: ["May Remain in Wheelchair"] },
+  "prince charming regal":        { height: null, a11y: ["May Remain in Wheelchair"] },
+  "casey jr":                     { height: null, a11y: ["May Remain in Wheelchair"] },
+  "main street vehicles":         { height: null, a11y: ["May Remain in Wheelchair"] },
 
   // ── EPCOT ─────────────────────────────────────────────────────────────────
   "guardians of the galaxy":      { height: 42, a11y: ["Must Transfer", "No Loose Articles"] },
@@ -31,6 +44,13 @@ export const RIDE_DETAILS = {
   "soarin":                       { height: 40, a11y: ["Must Transfer"] },
   "living with the land":         { height: null, a11y: ["May Remain in Wheelchair"] },
   "spaceship earth":              { height: null, a11y: ["May Remain in Wheelchair"] },
+  "turtle talk":                  { height: null, a11y: ["May Remain in Wheelchair"] },
+  "journey into imagination":     { height: null, a11y: ["May Remain in Wheelchair"] },
+  "seas with nemo":               { height: null, a11y: ["May Remain in Wheelchair"] },
+  "gran fiesta tour":             { height: null, a11y: ["May Remain in Wheelchair"] },
+  "reflections of china":         { height: null, a11y: ["May Remain in Wheelchair"] },
+  "impressions de france":        { height: null, a11y: ["May Remain in Wheelchair"] },
+  "o canada":                     { height: null, a11y: ["May Remain in Wheelchair"] },
 
   // ── Hollywood Studios ─────────────────────────────────────────────────────
   "rise of the resistance":       { height: 40, a11y: ["Must Transfer"] },
@@ -43,6 +63,8 @@ export const RIDE_DETAILS = {
   "toy story mania":              { height: null, a11y: ["May Remain in Wheelchair"] },
   "runaway railway":              { height: null, a11y: ["May Remain in Wheelchair"] },
   "alien swirling":               { height: null, a11y: ["May Remain in Wheelchair"] },
+  "star tours":                   { height: 40, a11y: ["Must Transfer"] },
+  "indiana jones":                { height: null, a11y: ["May Remain in Wheelchair"] },
 
   // ── Animal Kingdom ────────────────────────────────────────────────────────
   "flight of passage":            { height: 44, a11y: ["Must Transfer"] },
@@ -53,6 +75,11 @@ export const RIDE_DETAILS = {
   "dinosaur":                     { height: 40, a11y: ["Must Transfer"] },
   "kali river rapids":            { height: 38, a11y: ["Must Transfer"] },
   "triceratop spin":              { height: null, a11y: ["May Remain in Wheelchair"] },
+  "it's tough to be a bug":       { height: null, a11y: ["May Remain in Wheelchair"] },
+  "tough to be a bug":            { height: null, a11y: ["May Remain in Wheelchair"] },
+  "wildlife express":             { height: null, a11y: ["May Remain in Wheelchair"] },
+  "gorilla falls":                { height: null, a11y: ["May Remain in Wheelchair"] },
+  "maharajah jungle trek":        { height: null, a11y: ["May Remain in Wheelchair"] },
 };
 
 // Look up ride details by name — returns { height, a11y } or null
