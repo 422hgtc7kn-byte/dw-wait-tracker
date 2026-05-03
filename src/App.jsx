@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import TrendChart from "./TrendChart.jsx";
 import CrowdTrend from "./CrowdTrend.jsx";
-
+import AuthScreen from "./AuthScreen.jsx";
 
 // ── Theme tokens ──────────────────────────────────────────────────────────────
 const LIGHT = {
@@ -504,7 +504,7 @@ export default function App() {
   const handleLogin = (newToken, newUsername) => {
     setToken(newToken);
     setUsername(newUsername);
-    setProfileLoaded(false); // trigger profile reload
+    setProfileLoaded(false);
   };
 
   const handleLogout = () => {
@@ -514,9 +514,6 @@ export default function App() {
     setUsername(null);
     setProfileLoaded(false);
   };
-
-  // Show auth screen if not logged in
-  if (!token) return <AuthScreen onLogin={handleLogin} dark={dark} />;
 
   const fetchParkData = useCallback(async (parkKey) => {
     const p = PARKS[parkKey];
@@ -619,6 +616,17 @@ export default function App() {
     const idx = SORT_CYCLE.indexOf(sortBy);
     setSortBy(SORT_CYCLE[(idx+1) % SORT_CYCLE.length]);
   };
+
+  // Show auth screen if not logged in
+  if (!token) return <AuthScreen onLogin={handleLogin} dark={dark} />;
+
+  // Show loading screen while profile is being fetched from server
+  if (!profileLoaded) return (
+    <div style={{ minHeight:"100vh", background:T.bg, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", fontFamily:FONT }}>
+      <div style={{ fontSize:48, marginBottom:16 }}>🏰</div>
+      <div style={{ color:T.textSub, fontSize:14 }}>Loading your profile…</div>
+    </div>
+  );
 
   return (
     <div style={{ minHeight:"100vh",background:T.bg,fontFamily:FONT,padding:"0 0 48px",maxWidth:430,margin:"0 auto",transition:"background 0.3s" }}>
