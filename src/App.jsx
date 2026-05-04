@@ -662,9 +662,10 @@ export default function App() {
     }).filter(r => {
       if (a11yFilter === "all") return true;
       const details = getRideDetails(r.name);
-      if (a11yFilter === "wheelchair") return details?.a11y?.some(t => t.toLowerCase().includes("wheelchair"));
-      if (a11yFilter === "transfer")   return !details?.a11y?.some(t => t.toLowerCase().includes("must transfer"));
-      if (a11yFilter === "no_loose")   return !details?.a11y?.some(t => t.toLowerCase().includes("loose"));
+      if (a11yFilter === "wheelchair") return details?.a11y?.some(t => t.includes("May Remain in Wheelchair"));
+      if (a11yFilter === "transfer")   return !details?.a11y?.some(t => t.includes("Must Transfer") || t.includes("Must Be Ambulatory"));
+      if (a11yFilter === "no_loose")   return !details?.a11y?.some(t => t.includes("No Loose Articles"));
+      if (a11yFilter === "ambulatory") return !details?.a11y?.some(t => t.includes("Must Be Ambulatory"));
       return true;
     })
   );
@@ -835,9 +836,10 @@ export default function App() {
                   </select>
                   <select value={a11yFilter} onChange={e=>setA11yFilter(e.target.value)} style={{ flex:1, background:T.surface, color:T.textSub, border:`1px solid ${T.border}`, borderRadius:10, padding:"7px 10px", fontSize:12, fontFamily:FONT, cursor:"pointer" }}>
                     <option value="all">♿ All rides</option>
-                    <option value="wheelchair">♿ Wheelchair OK</option>
+                    <option value="wheelchair">♿ Stay in wheelchair</option>
                     <option value="transfer">♿ No transfer req.</option>
                     <option value="no_loose">♿ Loose articles OK</option>
+                    <option value="ambulatory">♿ No walking req.</option>
                   </select>
                 </div>
                 <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14 }}>
