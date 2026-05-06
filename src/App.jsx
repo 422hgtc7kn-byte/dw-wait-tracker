@@ -37,7 +37,32 @@ const DARK = {
   skeletonA: "rgba(255,255,255,0.07)", skeletonB: "rgba(255,255,255,0.04)",
   chartBg: "#13151f", shadow: "none",
 };
+// Bowser Jr palette — orange shell, blue bandana, white spots, dark bg
+const GREGGY = {
+  bg: "#1a0a00", surface: "#2a1200", border: "#5c2a00",
+  text: "#fff8f0", textSub: "#f4a836", textMuted: "#c47820",
+  skeletonA: "rgba(244,168,54,0.12)", skeletonB: "rgba(244,168,54,0.06)",
+  chartBg: "#1f0e00", shadow: "none",
+  greggy: true,
+};
 const FONT = "'Inter', sans-serif";
+
+// Greggy mode park overrides — all parks get Bowser Jr colors
+const GREGGY_PARK = {
+  color: "#7c2d00", accent: "#f4a836", accentLight: "#3d1a00", accentDark: "#2a0e00",
+};
+
+// Responsive breakpoints
+const BREAKPOINTS = { mobile: 480, tablet: 900 };
+function useWindowWidth() {
+  const [w, setW] = useState(() => typeof window !== "undefined" ? window.innerWidth : 430);
+  useEffect(() => {
+    const handler = () => setW(window.innerWidth);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
+  return w;
+}
 
 const PARKS = {
   mk: { name: "Magic Kingdom",     entityId: "75ea578a-adc8-4116-a54d-dccb60765ef9", icon: "🏰", color: "#1a3a6b", accent: "#2563eb", accentLight: "#dbeafe", accentDark: "#1e3a6e",
@@ -305,11 +330,50 @@ function MapModal({ park, onClose, T, dark }) {
   );
 }
 
+// ── NoteModal ─────────────────────────────────────────────────────────────────
+function NoteModal({ ride, existingNote, onSave, onClose, accent, T }) {
+  const [text, setText] = useState(existingNote || "");
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:100, display:"flex", alignItems:"flex-end", justifyContent:"center" }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background:T.surface, borderRadius:"24px 24px 0 0", padding:"28px 24px 44px", width:"100%", maxWidth:430, boxShadow:"0 -4px 24px rgba(0,0,0,0.2)" }}>
+        <div style={{ width:36, height:4, borderRadius:2, background:T.border, margin:"0 auto 20px" }} />
+        <div style={{ color:accent, fontSize:11, fontFamily:FONT, textTransform:"uppercase", letterSpacing:1.5, fontWeight:700, marginBottom:6 }}>Ride Note</div>
+        <div style={{ color:T.text, fontWeight:700, fontSize:17, fontFamily:FONT, marginBottom:16 }}>{ride.name}</div>
+        <textarea
+          autoFocus
+          value={text}
+          onChange={e => setText(e.target.value)}
+          placeholder="Add a note… e.g. 'Kids loved this', 'Skip if wet', 'Best seat is row 3'"
+          rows={4}
+          style={{
+            width:"100%", padding:"12px 14px", borderRadius:12,
+            border:`1.5px solid ${T.border}`, background:T.bg,
+            color:T.text, fontFamily:FONT, fontSize:14,
+            resize:"none", outline:"none", boxSizing:"border-box",
+            lineHeight:1.5,
+          }}
+        />
+        <div style={{ display:"flex", gap:10, marginTop:16 }}>
+          {existingNote && (
+            <button onClick={() => onSave("")} style={{ flex:1, padding:13, borderRadius:14, border:`1px solid ${T.border}`, background:T.bg, color:"#dc2626", fontFamily:FONT, fontWeight:600, fontSize:14, cursor:"pointer" }}>
+              Delete
+            </button>
+          )}
+          <button onClick={() => onSave(text.trim())} style={{ flex:2, padding:13, borderRadius:14, border:"none", background:accent, color:"#fff", fontFamily:FONT, fontWeight:700, fontSize:14, cursor:"pointer" }}>
+            Save Note 📝
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── RideCard ──────────────────────────────────────────────────────────────────
-function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleFavorite, alertThreshold, onSetAlert, isHidden, onToggleHidden, T, dark }) {
+function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleFavorite, alertThreshold, onSetAlert, isHidden, onToggleHidden, note, onSetNote, T, dark }) {
   const [expanded, setExpanded] = useState(false);
   const [trendData, setTrendData] = useState(null);
   const [trendLoading, setTrendLoading] = useState(false);
+  const [showNoteModal, setShowNoteModal] = useState(false);
   const thrill = inferThrill(ride.name);
   const details = getRideDetails(ride.name);
   const isOperating = ride.status === "OPERATING";
@@ -354,12 +418,31 @@ function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleF
         <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
           <button onClick={e=>{e.stopPropagation();onToggleFavorite();}} style={{ background:"none",border:"none",cursor:"pointer",fontSize:18,padding:4 }}>{isFavorite?"⭐":"☆"}</button>
           <button onClick={e=>{e.stopPropagation();onSetAlert();}} style={{ background:"none",border:"none",cursor:"pointer",fontSize:16,padding:4,opacity:hasAlert?1:0.35 }}>🔔</button>
+          <button onClick={e=>{e.stopPropagation();setShowNoteModal(true);}} style={{ background:"none",border:"none",cursor:"pointer",fontSize:16,padding:4,opacity:note?1:0.35 }} title={note?"Edit note":"Add note"}>📝</button>
           <div style={{ textAlign:"right" }}>
             <WaitBadge minutes={wait} status={ride.status} dark={dark} />
             {isOperating && wait!=null && <div style={{ color:T.textMuted,fontSize:10,marginTop:3,fontFamily:FONT }}>standby</div>}
           </div>
         </div>
       </div>
+
+      {/* Note preview — always visible when note exists */}
+      {note && !expanded && (
+        <div onClick={() => isOperating && setExpanded(e => !e)} style={{ marginTop:8, padding:"7px 10px", borderRadius:8, background:T.bg, border:`1px solid ${T.border}`, cursor:isOperating?"pointer":"default" }}>
+          <span style={{ color:T.textMuted, fontSize:11, fontFamily:FONT }}>📝 </span>
+          <span style={{ color:T.textSub, fontSize:12, fontFamily:FONT }}>{note}</span>
+        </div>
+      )}
+
+      {showNoteModal && (
+        <NoteModal
+          ride={ride}
+          existingNote={note}
+          onSave={(text) => { onSetNote(text); setShowNoteModal(false); }}
+          onClose={() => setShowNoteModal(false)}
+          accent={accent} T={T}
+        />
+      )}
 
       {expanded && isOperating && (
         <div style={{ marginTop:14, borderTop:`1px solid ${T.border}`, paddingTop:14 }}>
@@ -402,6 +485,25 @@ function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleF
           <button onClick={() => onToggleHidden()} style={{ marginTop:10,width:"100%",padding:9,borderRadius:10,border:`1px solid ${T.border}`,background:T.bg,color:T.textMuted,fontFamily:FONT,fontSize:12,cursor:"pointer" }}>
             Hide this ride
           </button>
+
+          {/* Note section in expanded view */}
+          <div style={{ marginTop:10 }}>
+            {note ? (
+              <div style={{ padding:"10px 12px", borderRadius:10, background:T.bg, border:`1px solid ${accent}33` }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8 }}>
+                  <div>
+                    <div style={{ color:accent, fontSize:11, fontFamily:FONT, fontWeight:600, marginBottom:4 }}>📝 My Note</div>
+                    <div style={{ color:T.textSub, fontSize:13, fontFamily:FONT, lineHeight:1.5 }}>{note}</div>
+                  </div>
+                  <button onClick={() => setShowNoteModal(true)} style={{ background:"none", border:"none", color:T.textMuted, fontSize:12, fontFamily:FONT, cursor:"pointer", flexShrink:0, padding:"2px 6px" }}>Edit</button>
+                </div>
+              </div>
+            ) : (
+              <button onClick={() => setShowNoteModal(true)} style={{ width:"100%", padding:9, borderRadius:10, border:`1px dashed ${T.border}`, background:"transparent", color:T.textMuted, fontFamily:FONT, fontSize:12, cursor:"pointer" }}>
+                📝 Add a note to this ride
+              </button>
+            )}
+          </div>
           {ride.lastUpdated && <div style={{ color:T.textMuted,fontSize:10,fontFamily:FONT,marginTop:6 }}>Updated {new Date(ride.lastUpdated).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}</div>}
         </div>
       )}
@@ -497,6 +599,10 @@ export default function App() {
   const [username, setUsername] = useState(() => localStorage.getItem("dwt_username") || null);
   const [profileLoaded, setProfileLoaded] = useState(false);
   const [dark, setDark]             = useState(() => loadPref("dwt_dark", false));
+  const [greggyMode, setGreggyMode] = useState(() => loadPref("dwt_greggy", false));
+  const windowWidth = useWindowWidth();
+  const isTablet  = windowWidth >= BREAKPOINTS.mobile;
+  const isDesktop = windowWidth >= BREAKPOINTS.tablet;
   const [activePark, setActivePark] = useState("mk");
   const [activeTab, setActiveTab]   = useState("rides");
   const [ridesData, setRidesData]   = useState({});
@@ -509,6 +615,7 @@ export default function App() {
   const [favorites, setFavorites]   = useState(() => loadPref("dwt_favorites", {}));
   const [alerts, setAlerts]         = useState(() => loadPref("dwt_alerts", {}));
   const [hidden, setHidden]         = useState(() => loadPref("dwt_hidden", {}));
+  const [notes, setNotes]           = useState(() => loadPref("dwt_notes", {}));
   const [filter, setFilter]         = useState("all");
   const [heightFilter, setHeightFilter] = useState("all");
   const [a11yFilter, setA11yFilter]     = useState("all");
@@ -519,12 +626,14 @@ export default function App() {
   const [banners, setBanners]       = useState([]);
   const firedAlerts                 = useRef({});
 
-  const T = dark ? DARK : LIGHT;
+  const T = greggyMode ? GREGGY : dark ? DARK : LIGHT;
 
-  useEffect(() => { savePref("dwt_dark",      dark);      }, [dark]);
-  useEffect(() => { savePref("dwt_favorites", favorites); }, [favorites]);
+  useEffect(() => { savePref("dwt_dark",      dark);       }, [dark]);
+  useEffect(() => { savePref("dwt_greggy",    greggyMode); }, [greggyMode]);
+  useEffect(() => { savePref("dwt_favorites", favorites);  }, [favorites]);
   useEffect(() => { savePref("dwt_alerts",    alerts);    }, [alerts]);
   useEffect(() => { savePref("dwt_hidden",    hidden);    }, [hidden]);
+  useEffect(() => { savePref("dwt_notes",     notes);     }, [notes]);
   useEffect(() => { document.body.style.background = T.bg; }, [T.bg]);
 
   // Load profile from server once after login
@@ -535,6 +644,7 @@ export default function App() {
         if (profile.favorites) setFavorites(profile.favorites);
         if (profile.alerts)    setAlerts(profile.alerts);
         if (profile.hidden)    setHidden(profile.hidden);
+        if (profile.notes)     setNotes(profile.notes);
         if (profile.dark != null) setDark(profile.dark);
         if (profile.sortBy)   setSortBy(profile.sortBy);
       }
@@ -548,7 +658,7 @@ export default function App() {
     if (!token || !profileLoaded) return;
     clearTimeout(syncTimer.current);
     syncTimer.current = setTimeout(() => {
-      saveProfile(token, { favorites, alerts, hidden, dark, sortBy });
+      saveProfile(token, { favorites, alerts, hidden, notes, dark, sortBy });
     }, 1500);
   }, [token, profileLoaded, favorites, alerts, hidden, dark, sortBy]);
 
@@ -618,7 +728,8 @@ export default function App() {
   // Reset fired state when alert thresholds change
   useEffect(() => { firedAlerts.current = {}; }, [alerts]);
 
-  const park        = PARKS[activePark];
+  const parkBase = PARKS[activePark];
+  const park     = greggyMode ? { ...parkBase, ...GREGGY_PARK } : parkBase;
   const allEntities = ridesData[activePark] || [];
   const rideEntities = allEntities.filter(e=>!isShowEntity(e));
   const showEntities = allEntities.filter(e=>isShowEntity(e));
@@ -654,6 +765,8 @@ export default function App() {
       return true;
     }).filter(r => {
       const details = getRideDetails(r.name);
+      // Greggy mode: only rides 38" and under OR no height requirement
+      if (greggyMode) return !details?.height || details.height <= 38;
       if (heightFilter === "any")     return !details?.height;
       if (heightFilter === "under40") return !details?.height || details.height <= 40;
       if (heightFilter === "under44") return !details?.height || details.height <= 44;
@@ -662,9 +775,10 @@ export default function App() {
     }).filter(r => {
       if (a11yFilter === "all") return true;
       const details = getRideDetails(r.name);
-      if (a11yFilter === "wheelchair") return details?.a11y?.some(t => t.toLowerCase().includes("wheelchair"));
-      if (a11yFilter === "transfer")   return !details?.a11y?.some(t => t.toLowerCase().includes("must transfer"));
-      if (a11yFilter === "no_loose")   return !details?.a11y?.some(t => t.toLowerCase().includes("loose"));
+      if (a11yFilter === "wheelchair") return details?.a11y?.some(t => t.includes("May Remain in Wheelchair"));
+      if (a11yFilter === "transfer")   return !details?.a11y?.some(t => t.includes("Must Transfer") || t.includes("Must Be Ambulatory"));
+      if (a11yFilter === "no_loose")   return !details?.a11y?.some(t => t.includes("No Loose Articles"));
+      if (a11yFilter === "ambulatory") return !details?.a11y?.some(t => t.includes("Must Be Ambulatory"));
       return true;
     })
   );
@@ -685,6 +799,7 @@ export default function App() {
   const hiddenCount     = Object.values(hidden).filter(Boolean).length;
   const toggleFavorite  = id => setFavorites(prev => ({ ...prev, [id]: !prev[id] }));
   const toggleHidden    = id => setHidden(prev => ({ ...prev, [id]: true }));
+  const setNote         = (id, text) => setNotes(prev => { const n={...prev}; text?n[id]=text:delete n[id]; return n; });
   const saveAlert = (rideId, threshold) => {
     setAlerts(prev => { const n={...prev}; threshold===null?delete n[rideId]:(n[rideId]=threshold); return n; });
     setAlertModal(null);
@@ -710,8 +825,25 @@ export default function App() {
   );
 
   return (
-    <div style={{ minHeight:"100vh",background:T.bg,fontFamily:FONT,padding:"0 0 48px",maxWidth:430,margin:"0 auto",transition:"background 0.3s" }}>
-      <style>{`@keyframes pulse{0%,100%{opacity:0.5}50%{opacity:1}} *{box-sizing:border-box;} button{transition:opacity 0.15s;} button:active{opacity:0.7;}`}</style>
+    <div style={{ minHeight:"100vh", background:T.bg, fontFamily:FONT, transition:"background 0.3s" }}>
+      <style>{`
+        @keyframes pulse{0%,100%{opacity:0.5}50%{opacity:1}}
+        @keyframes greggy-glow{0%,100%{box-shadow:0 0 8px #f4a83688}50%{box-shadow:0 0 18px #f4a836cc}}
+        *{box-sizing:border-box;}
+        button{transition:opacity 0.15s;}
+        button:active{opacity:0.7;}
+      `}</style>
+
+      {/* Responsive container */}
+      <div style={{
+        maxWidth: isDesktop ? 1200 : isTablet ? 768 : 430,
+        margin: "0 auto",
+        padding: isDesktop ? "0 0 48px" : "0 0 48px",
+        display: isDesktop ? "grid" : "block",
+        gridTemplateColumns: isDesktop ? "380px 1fr" : undefined,
+        gridTemplateRows: isDesktop ? "auto 1fr" : undefined,
+        alignItems: isDesktop ? "start" : undefined,
+      }}>
 
       {/* In-app alert banners */}
       <AlertBanner alerts={banners} onDismiss={i => setBanners(prev=>prev.filter((_,j)=>j!==i))} T={T} dark={dark} />
@@ -723,16 +855,17 @@ export default function App() {
 
       {showMap && <MapModal park={park} onClose={()=>setShowMap(false)} T={T} dark={dark} />}
 
-      {/* ── Header ── */}
-      <div style={{ background:park.color,padding:"52px 20px 20px",position:"relative",overflow:"hidden" }}>
+      {/* Header — spans full width */}
+      <div style={{ gridColumn: isDesktop ? "1 / -1" : undefined, background:greggyMode?"#7c2d00":park.color, padding:`${isDesktop?"28px":"52px"} 20px 20px`, position:"relative", overflow:"hidden",
+        animation: greggyMode ? "greggy-glow 2s infinite" : "none" }}>
         <div style={{ position:"absolute",top:-40,right:-40,width:160,height:160,borderRadius:"50%",background:"rgba(255,255,255,0.06)",pointerEvents:"none" }} />
+        {greggyMode && <div style={{ position:"absolute",top:8,left:0,right:0,textAlign:"center",fontSize:11,color:"#f4a836",fontFamily:FONT,fontWeight:700,letterSpacing:2,textTransform:"uppercase" }}>🐢 GREGGY MODE ACTIVATED 🐢</div>}
 
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4 }}>
           <div>
             <div style={{ fontSize:11,color:"rgba(255,255,255,0.6)",textTransform:"uppercase",letterSpacing:2,fontWeight:600,marginBottom:4 }}>Walt Disney World</div>
-            <div style={{ fontSize:26,fontWeight:900,color:"#fff",letterSpacing:-0.5 }}>{park.icon} {park.name}</div>
+            <div style={{ fontSize:26,fontWeight:900,color:greggyMode?"#f4a836":"#fff",letterSpacing:-0.5 }}>{park.icon} {park.name}</div>
           </div>
-          {/* Refresh on its own — always visible */}
           <button onClick={()=>fetchParkData(activePark)} disabled={loading}
             style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"8px 12px",color:loading?"rgba(255,255,255,0.4)":"#fff",fontSize:18,cursor:loading?"default":"pointer",flexShrink:0 }}>
             {loading?"⟳":"↻"}
@@ -747,20 +880,18 @@ export default function App() {
         {(() => {
           const s = schedules[activePark]?.schedule;
           if (!s) return null;
-          const open  = s.openingTime  ? new Date(s.openingTime).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})  : null;
-          const close = s.closingTime ? new Date(s.closingTime).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}) : null;
+          const open  = s.openingTime  ? new Date(s.openingTime).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}) : null;
+          const close = s.closingTime  ? new Date(s.closingTime).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}) : null;
           const special = schedules[activePark]?.special || [];
           if (!open && !close) return null;
           return (
             <div style={{ marginBottom:10 }}>
-              <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
-                <span style={{ background:"rgba(255,255,255,0.15)", borderRadius:20, padding:"4px 12px", color:"#fff", fontSize:12, fontWeight:600, fontFamily:FONT }}>
-                  🕘 {open} – {close}
-                </span>
-                {special.map((sp, i) => (
-                  <span key={i} style={{ background:"rgba(255,215,0,0.2)", borderRadius:20, padding:"4px 12px", color:"#ffd700", fontSize:11, fontWeight:600, fontFamily:FONT, border:"1px solid rgba(255,215,0,0.3)" }}>
-                    ✨ {sp.type?.replace(/_/g," ")}: {sp.openingTime ? new Date(sp.openingTime).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}) : ""}
-                    {sp.closingTime ? ` – ${new Date(sp.closingTime).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}` : ""}
+              <div style={{ display:"flex",alignItems:"center",gap:8,flexWrap:"wrap" }}>
+                <span style={{ background:"rgba(255,255,255,0.15)",borderRadius:20,padding:"4px 12px",color:"#fff",fontSize:12,fontWeight:600,fontFamily:FONT }}>🕘 {open} – {close}</span>
+                {special.map((sp,i) => (
+                  <span key={i} style={{ background:"rgba(255,215,0,0.2)",borderRadius:20,padding:"4px 12px",color:"#ffd700",fontSize:11,fontWeight:600,fontFamily:FONT,border:"1px solid rgba(255,215,0,0.3)" }}>
+                    ✨ {sp.type?.replace(/_/g," ")}: {sp.openingTime?new Date(sp.openingTime).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}):""}
+                    {sp.closingTime?` – ${new Date(sp.closingTime).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}` :""}
                   </span>
                 ))}
               </div>
@@ -768,43 +899,70 @@ export default function App() {
           );
         })()}
 
-        {/* Secondary actions — second row, all fit comfortably */}
-        <div style={{ display:"flex",gap:6,alignItems:"center",marginBottom:14 }}>
+        {/* Secondary actions */}
+        <div style={{ display:"flex",gap:6,alignItems:"center",marginBottom:14,flexWrap:"wrap" }}>
           <button onClick={handleLogout}
             style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:20,padding:"5px 12px",color:"#fff",fontFamily:FONT,fontSize:11,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap" }}>
             👤 {username}
           </button>
+          <button onClick={()=>setGreggyMode(g=>!g)} style={{
+            background: greggyMode?"#f4a836":"rgba(255,255,255,0.15)",
+            border: greggyMode?"2px solid #fff":"none",
+            borderRadius:20, padding:"5px 12px",
+            color: greggyMode?"#3d0e00":"#fff",
+            fontFamily:FONT, fontSize:11, fontWeight:800, cursor:"pointer", whiteSpace:"nowrap",
+          }}>🐢 {greggyMode?"Exit Greggy Mode":"Greggy Mode"}</button>
           <div style={{ flex:1 }} />
-          <button onClick={()=>setShowMap(true)}
-            style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>🗺</button>
+          <button onClick={()=>setShowMap(true)} style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>🗺</button>
           <a href="https://disneyworld.disney.go.com/app/" target="_blank" rel="noreferrer"
             style={{ background:"rgba(255,255,255,0.15)",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,textDecoration:"none",display:"inline-flex",alignItems:"center" }}>🏰</a>
-          <button onClick={()=>setDark(d=>!d)}
-            style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>
+          <button onClick={()=>setDark(d=>!d)} style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>
             {dark?"☀️":"🌙"}
           </button>
         </div>
 
-        {/* Park switcher */}
-        <div style={{ display:"flex",gap:6,overflowX:"auto",paddingBottom:2,marginBottom:14 }}>
-          {Object.entries(PARKS).map(([id,p]) => (
-            <button key={id} onClick={()=>setActivePark(id)} style={{ background:activePark===id?"rgba(255,255,255,0.25)":"rgba(255,255,255,0.1)",color:"#fff",border:activePark===id?"1.5px solid rgba(255,255,255,0.5)":"1px solid rgba(255,255,255,0.15)",borderRadius:20,padding:"5px 14px",fontSize:12,fontWeight:activePark===id?700:400,cursor:"pointer",whiteSpace:"nowrap",fontFamily:FONT }}>
-              {p.icon} {id.toUpperCase()}
-            </button>
-          ))}
-        </div>
+        {/* Park switcher — hidden on desktop (sidebar handles it) */}
+        {!isDesktop && (
+          <div style={{ display:"flex",gap:6,overflowX:"auto",paddingBottom:2,marginBottom:14 }}>
+            {Object.entries(PARKS).map(([id,p]) => (
+              <button key={id} onClick={()=>setActivePark(id)} style={{ background:activePark===id?"rgba(255,255,255,0.25)":"rgba(255,255,255,0.1)",color:"#fff",border:activePark===id?"1.5px solid rgba(255,255,255,0.5)":"1px solid rgba(255,255,255,0.15)",borderRadius:20,padding:"5px 14px",fontSize:12,fontWeight:activePark===id?700:400,cursor:"pointer",whiteSpace:"nowrap",fontFamily:FONT }}>
+                {p.icon} {id.toUpperCase()}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Rides / Shows tab */}
         <div style={{ display:"flex",gap:6,background:"rgba(0,0,0,0.2)",borderRadius:12,padding:4 }}>
           {[{id:"rides",label:"🎢 Rides"},{id:"shows",label:"🎭 Shows"}].map(t=>(
-            <button key={t.id} onClick={()=>setActiveTab(t.id)} style={{ flex:1,padding:"8px 0",borderRadius:9,border:"none",background:activeTab===t.id?"#fff":"transparent",color:activeTab===t.id?park.color:"rgba(255,255,255,0.6)",fontFamily:FONT,fontWeight:activeTab===t.id?700:500,fontSize:13,cursor:"pointer",transition:"all 0.2s",boxShadow:activeTab===t.id?"0 1px 4px rgba(0,0,0,0.2)":"none" }}>{t.label}</button>
+            <button key={t.id} onClick={()=>setActiveTab(t.id)} style={{ flex:1,padding:"8px 0",borderRadius:9,border:"none",background:activeTab===t.id?"#fff":"transparent",color:activeTab===t.id?(greggyMode?"#7c2d00":park.color):"rgba(255,255,255,0.6)",fontFamily:FONT,fontWeight:activeTab===t.id?700:500,fontSize:13,cursor:"pointer",transition:"all 0.2s",boxShadow:activeTab===t.id?"0 1px 4px rgba(0,0,0,0.2)":"none" }}>{t.label}</button>
           ))}
         </div>
       </div>
 
-      {/* ── Body ── */}
+      {/* Desktop sidebar */}
+      {isDesktop && (
+        <div style={{ padding:"24px 12px 0 20px", borderRight:`1px solid ${T.border}`, position:"sticky", top:0, height:"100vh", overflowY:"auto" }}>
+          <div style={{ color:T.textSub, fontSize:11, fontFamily:FONT, fontWeight:600, textTransform:"uppercase", letterSpacing:1, marginBottom:12 }}>Parks</div>
+          {Object.entries(PARKS).map(([id,p]) => (
+            <button key={id} onClick={()=>setActivePark(id)} style={{
+              display:"flex", alignItems:"center", gap:10, width:"100%",
+              padding:"11px 14px", borderRadius:12, border:"none", marginBottom:6,
+              background: activePark===id ? (greggyMode?GREGGY_PARK.accentLight:park.accentLight) : T.bg,
+              cursor:"pointer", fontFamily:FONT, textAlign:"left",
+              borderLeft: activePark===id ? `3px solid ${greggyMode?GREGGY_PARK.accent:park.accent}` : "3px solid transparent",
+              transition:"all 0.15s",
+            }}>
+              <span style={{ fontSize:22 }}>{p.icon}</span>
+              <span style={{ color: activePark===id?(greggyMode?GREGGY_PARK.accent:park.accent):T.text, fontWeight:activePark===id?700:400, fontSize:14 }}>{p.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Main content */}
       <div style={{ padding:"16px 16px 0" }}>
-        {error && <div style={{ background:dark?"#3b0a0a":"#fee2e2",borderRadius:12,padding:"12px 16px",marginBottom:14,border:`1px solid ${dark?"#7f1d1d":"#fecaca"}`,color:dark?"#f87171":"#991b1b",fontSize:13,fontFamily:FONT }}>⚠️ {error}</div>}
+        {error && <div style={{ background:greggyMode?"#3d0e00":dark?"#3b0a0a":"#fee2e2",borderRadius:12,padding:"12px 16px",marginBottom:14,border:`1px solid ${greggyMode?"#7c2d00":dark?"#7f1d1d":"#fecaca"}`,color:greggyMode?"#f4a836":dark?"#f87171":"#991b1b",fontSize:13,fontFamily:FONT }}>⚠️ {error}</div>}
 
         {/* ── RIDES TAB ── */}
         {activeTab==="rides" && (
@@ -835,9 +993,10 @@ export default function App() {
                   </select>
                   <select value={a11yFilter} onChange={e=>setA11yFilter(e.target.value)} style={{ flex:1, background:T.surface, color:T.textSub, border:`1px solid ${T.border}`, borderRadius:10, padding:"7px 10px", fontSize:12, fontFamily:FONT, cursor:"pointer" }}>
                     <option value="all">♿ All rides</option>
-                    <option value="wheelchair">♿ Wheelchair OK</option>
+                    <option value="wheelchair">♿ Stay in wheelchair</option>
                     <option value="transfer">♿ No transfer req.</option>
                     <option value="no_loose">♿ Loose articles OK</option>
+                    <option value="ambulatory">♿ No walking req.</option>
                   </select>
                 </div>
                 <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14 }}>
@@ -871,6 +1030,7 @@ export default function App() {
                     isFavorite={!!favorites[ride.id]} onToggleFavorite={()=>toggleFavorite(ride.id)}
                     alertThreshold={alerts[ride.id]??null} onSetAlert={()=>setAlertModal(ride)}
                     isHidden={!!hidden[ride.id]} onToggleHidden={()=>toggleHidden(ride.id)}
+                    note={notes[ride.id]||""} onSetNote={(text)=>setNote(ride.id,text)}
                     T={T} dark={dark} />
                 ))}
               </>
@@ -927,16 +1087,21 @@ export default function App() {
 
         {/* Footer */}
         {!loading && allEntities.length>0 && (
-          <div style={{ ...cardStyle(T),padding:"16px",marginTop:8,background:dark?park.accentDark:park.accentLight,border:`1px solid ${park.accent}33` }}>
-            <div style={{ color:park.accent,fontSize:12,fontWeight:700,fontFamily:FONT,marginBottom:4 }}>💡 Pro Strategy</div>
+          <div style={{ ...cardStyle(T),padding:"16px",marginTop:8,background:greggyMode?GREGGY_PARK.accentLight:dark?park.accentDark:park.accentLight,border:`1px solid ${park.accent}33` }}>
+            <div style={{ color:park.accent,fontSize:12,fontWeight:700,fontFamily:FONT,marginBottom:4 }}>
+              {greggyMode?"🐢 Greggy's Pro Strategy":"💡 Pro Strategy"}
+            </div>
             <div style={{ color:T.textSub,fontSize:12,fontFamily:FONT,lineHeight:1.6 }}>
-              Arrive 30 min before park open. Hit top rides first, then use Lightning Lane during peak hours. Return to headliners after 7pm for shorter queues.
+              {greggyMode
+                ? "All rides listed are 38\" and under — perfect for little ones! Hit the fan favorites first thing in the morning before the crowds build up."
+                : "Arrive 30 min before park open. Hit top rides first, then use Lightning Lane during peak hours. Return to headliners after 7pm for shorter queues."}
             </div>
             <div style={{ color:T.textMuted,fontSize:10,fontFamily:FONT,marginTop:8 }}>
               Powered by ThemeParks.wiki · Trend data builds with each visit
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   );
