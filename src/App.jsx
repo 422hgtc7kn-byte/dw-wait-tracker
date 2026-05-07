@@ -37,19 +37,29 @@ const DARK = {
   skeletonA: "rgba(255,255,255,0.07)", skeletonB: "rgba(255,255,255,0.04)",
   chartBg: "#13151f", shadow: "none",
 };
-// Bowser Jr palette — orange shell, blue bandana, white spots, dark bg
+// Bowser Jr palette — based on actual character:
+// Yellow body (#f5c800), green shell/head (#2d8a00), white bandana (#ffffff),
+// dark shell background (#1a3d00), orange accents (#e86c00), black eyes (#111)
 const GREGGY = {
-  bg: "#1a0a00", surface: "#2a1200", border: "#5c2a00",
-  text: "#fff8f0", textSub: "#f4a836", textMuted: "#c47820",
-  skeletonA: "rgba(244,168,54,0.12)", skeletonB: "rgba(244,168,54,0.06)",
-  chartBg: "#1f0e00", shadow: "none",
-  greggy: true,
+  bg:        "#0d1f00",  // deep dark green (shell shadow)
+  surface:   "#1a3d00",  // dark green (shell)
+  border:    "#2d6600",  // mid green
+  text:      "#ffffff",  // white (bandana)
+  textSub:   "#f5c800",  // Bowser Jr yellow
+  textMuted: "#7ab800",  // lighter green
+  skeletonA: "rgba(245,200,0,0.1)",
+  skeletonB: "rgba(245,200,0,0.05)",
+  chartBg:   "#112900",
+  shadow:    "none",
+  greggy:    true,
 };
-const FONT = "'Inter', sans-serif";
 
-// Greggy mode park overrides — all parks get Bowser Jr colors
+// Greggy park overrides
 const GREGGY_PARK = {
-  color: "#7c2d00", accent: "#f4a836", accentLight: "#3d1a00", accentDark: "#2a0e00",
+  color:       "#1a5200",  // dark green header
+  accent:      "#f5c800",  // Bowser Jr yellow
+  accentLight: "#1a3d00",  // dark green surface
+  accentDark:  "#0d1f00",  // deeper green
 };
 
 // Responsive breakpoints
@@ -828,7 +838,7 @@ export default function App() {
     <div style={{ minHeight:"100vh", background:T.bg, fontFamily:FONT, transition:"background 0.3s" }}>
       <style>{`
         @keyframes pulse{0%,100%{opacity:0.5}50%{opacity:1}}
-        @keyframes greggy-glow{0%,100%{box-shadow:0 0 8px #f4a83688}50%{box-shadow:0 0 18px #f4a836cc}}
+        @keyframes greggy-glow{0%,100%{box-shadow:0 0 8px #f5c80066}50%{box-shadow:0 0 18px #f5c800cc}}
         *{box-sizing:border-box;}
         button{transition:opacity 0.15s;}
         button:active{opacity:0.7;}
@@ -856,15 +866,15 @@ export default function App() {
       {showMap && <MapModal park={park} onClose={()=>setShowMap(false)} T={T} dark={dark} />}
 
       {/* Header — spans full width */}
-      <div style={{ gridColumn: isDesktop ? "1 / -1" : undefined, background:greggyMode?"#7c2d00":park.color, padding:`${isDesktop?"28px":"52px"} 20px 20px`, position:"relative", overflow:"hidden",
+      <div style={{ gridColumn: isDesktop ? "1 / -1" : undefined, background:greggyMode?"#1a5200":park.color, padding:`${isDesktop?"28px":"52px"} 20px 20px`, position:"relative", overflow:"hidden",
         animation: greggyMode ? "greggy-glow 2s infinite" : "none" }}>
         <div style={{ position:"absolute",top:-40,right:-40,width:160,height:160,borderRadius:"50%",background:"rgba(255,255,255,0.06)",pointerEvents:"none" }} />
-        {greggyMode && <div style={{ position:"absolute",top:8,left:0,right:0,textAlign:"center",fontSize:11,color:"#f4a836",fontFamily:FONT,fontWeight:700,letterSpacing:2,textTransform:"uppercase" }}>🐢 GREGGY MODE ACTIVATED 🐢</div>}
+        {greggyMode && <div style={{ position:"absolute",top:8,left:0,right:0,textAlign:"center",fontSize:11,color:"#f5c800",fontFamily:FONT,fontWeight:700,letterSpacing:2,textTransform:"uppercase" }}>🐢 GREGGY MODE ACTIVATED 🐢</div>}
 
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4 }}>
           <div>
             <div style={{ fontSize:11,color:"rgba(255,255,255,0.6)",textTransform:"uppercase",letterSpacing:2,fontWeight:600,marginBottom:4 }}>Walt Disney World</div>
-            <div style={{ fontSize:26,fontWeight:900,color:greggyMode?"#f4a836":"#fff",letterSpacing:-0.5 }}>{park.icon} {park.name}</div>
+            <div style={{ fontSize:26,fontWeight:900,color:greggyMode?"#f5c800":"#fff",letterSpacing:-0.5 }}>{park.icon} {park.name}</div>
           </div>
           <button onClick={()=>fetchParkData(activePark)} disabled={loading}
             style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"8px 12px",color:loading?"rgba(255,255,255,0.4)":"#fff",fontSize:18,cursor:loading?"default":"pointer",flexShrink:0 }}>
@@ -906,10 +916,10 @@ export default function App() {
             👤 {username}
           </button>
           <button onClick={()=>setGreggyMode(g=>!g)} style={{
-            background: greggyMode?"#f4a836":"rgba(255,255,255,0.15)",
+            background: greggyMode?"#f5c800":"rgba(255,255,255,0.15)",
             border: greggyMode?"2px solid #fff":"none",
             borderRadius:20, padding:"5px 12px",
-            color: greggyMode?"#3d0e00":"#fff",
+            color: greggyMode?"#0d1f00":"#fff",
             fontFamily:FONT, fontSize:11, fontWeight:800, cursor:"pointer", whiteSpace:"nowrap",
           }}>🐢 {greggyMode?"Exit Greggy Mode":"Greggy Mode"}</button>
           <div style={{ flex:1 }} />
@@ -935,7 +945,7 @@ export default function App() {
         {/* Rides / Shows tab */}
         <div style={{ display:"flex",gap:6,background:"rgba(0,0,0,0.2)",borderRadius:12,padding:4 }}>
           {[{id:"rides",label:"🎢 Rides"},{id:"shows",label:"🎭 Shows"}].map(t=>(
-            <button key={t.id} onClick={()=>setActiveTab(t.id)} style={{ flex:1,padding:"8px 0",borderRadius:9,border:"none",background:activeTab===t.id?"#fff":"transparent",color:activeTab===t.id?(greggyMode?"#7c2d00":park.color):"rgba(255,255,255,0.6)",fontFamily:FONT,fontWeight:activeTab===t.id?700:500,fontSize:13,cursor:"pointer",transition:"all 0.2s",boxShadow:activeTab===t.id?"0 1px 4px rgba(0,0,0,0.2)":"none" }}>{t.label}</button>
+            <button key={t.id} onClick={()=>setActiveTab(t.id)} style={{ flex:1,padding:"8px 0",borderRadius:9,border:"none",background:activeTab===t.id?"#fff":"transparent",color:activeTab===t.id?(greggyMode?"#1a5200":park.color):"rgba(255,255,255,0.6)",fontFamily:FONT,fontWeight:activeTab===t.id?700:500,fontSize:13,cursor:"pointer",transition:"all 0.2s",boxShadow:activeTab===t.id?"0 1px 4px rgba(0,0,0,0.2)":"none" }}>{t.label}</button>
           ))}
         </div>
       </div>
@@ -962,7 +972,7 @@ export default function App() {
 
       {/* Main content */}
       <div style={{ padding:"16px 16px 0" }}>
-        {error && <div style={{ background:greggyMode?"#3d0e00":dark?"#3b0a0a":"#fee2e2",borderRadius:12,padding:"12px 16px",marginBottom:14,border:`1px solid ${greggyMode?"#7c2d00":dark?"#7f1d1d":"#fecaca"}`,color:greggyMode?"#f4a836":dark?"#f87171":"#991b1b",fontSize:13,fontFamily:FONT }}>⚠️ {error}</div>}
+        {error && <div style={{ background:greggyMode?"#0d1f00":dark?"#3b0a0a":"#fee2e2",borderRadius:12,padding:"12px 16px",marginBottom:14,border:`1px solid ${greggyMode?"#1a5200":dark?"#7f1d1d":"#fecaca"}`,color:greggyMode?"#f5c800":dark?"#f87171":"#991b1b",fontSize:13,fontFamily:FONT }}>⚠️ {error}</div>}
 
         {/* ── RIDES TAB ── */}
         {activeTab==="rides" && (
