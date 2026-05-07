@@ -659,7 +659,7 @@ export default function App() {
         if (profile.sortBy)   setSortBy(profile.sortBy);
       }
       setProfileLoaded(true);
-    });
+    }).catch(() => setProfileLoaded(true));
   }, [token, profileLoaded]);
 
   // Debounced sync to server on pref changes
