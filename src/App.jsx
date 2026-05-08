@@ -841,15 +841,7 @@ export default function App() {
       `}</style>
 
       {/* Responsive container */}
-      <div style={{
-        maxWidth: isDesktop ? 1200 : isTablet ? 768 : 430,
-        margin: "0 auto",
-        padding: isDesktop ? "0 0 48px" : "0 0 48px",
-        display: isDesktop ? "grid" : "block",
-        gridTemplateColumns: isDesktop ? "380px 1fr" : undefined,
-        gridTemplateRows: isDesktop ? "auto 1fr" : undefined,
-        alignItems: isDesktop ? "start" : undefined,
-      }}>
+      <div style={{ maxWidth: isDesktop ? 1200 : isTablet ? 768 : 430, margin: "0 auto" }}>
 
       {/* In-app alert banners */}
       <AlertBanner alerts={banners} onDismiss={i => setBanners(prev=>prev.filter((_,j)=>j!==i))} T={T} dark={dark} />
@@ -861,8 +853,8 @@ export default function App() {
 
       {showMap && <MapModal park={park} onClose={()=>setShowMap(false)} T={T} dark={dark} />}
 
-      {/* Header — spans full width */}
-      <div style={{ gridColumn: isDesktop ? "1 / -1" : undefined, background:greggyMode?"#1a5200":park.color, padding:`${isDesktop?"28px":"52px"} 20px 20px`, position:"relative", overflow:"hidden",
+      {/* Header */}
+      <div style={{ background:greggyMode?"#1a5200":park.color, padding:`${isDesktop?"28px":"52px"} 20px 20px`, position:"relative", overflow:"hidden",
         animation: greggyMode ? "greggy-glow 2s infinite" : "none" }}>
         <div style={{ position:"absolute",top:-40,right:-40,width:160,height:160,borderRadius:"50%",background:"rgba(255,255,255,0.06)",pointerEvents:"none" }} />
         {greggyMode && <div style={{ position:"absolute",top:8,left:0,right:0,textAlign:"center",fontSize:11,color:"#f5c800",fontFamily:FONT,fontWeight:700,letterSpacing:2,textTransform:"uppercase" }}>🐢 GREGGY MODE ACTIVATED 🐢</div>}
@@ -946,29 +938,32 @@ export default function App() {
         </div>
       </div>
 
-      {/* Desktop sidebar */}
-      {isDesktop && (
-        <div style={{ padding:"24px 12px 0 20px", borderRight:`1px solid ${T.border}`, position:"sticky", top:0, height:"100vh", overflowY:"auto" }}>
-          <div style={{ color:T.textSub, fontSize:11, fontFamily:FONT, fontWeight:600, textTransform:"uppercase", letterSpacing:1, marginBottom:12 }}>Parks</div>
-          {Object.entries(PARKS).map(([id,p]) => (
-            <button key={id} onClick={()=>setActivePark(id)} style={{
-              display:"flex", alignItems:"center", gap:10, width:"100%",
-              padding:"11px 14px", borderRadius:12, border:"none", marginBottom:6,
-              background: activePark===id ? (greggyMode?GREGGY_PARK.accentLight:park.accentLight) : T.bg,
-              cursor:"pointer", fontFamily:FONT, textAlign:"left",
-              borderLeft: activePark===id ? `3px solid ${greggyMode?GREGGY_PARK.accent:park.accent}` : "3px solid transparent",
-              transition:"all 0.15s",
-            }}>
-              <span style={{ fontSize:22 }}>{p.icon}</span>
-              <span style={{ color: activePark===id?(greggyMode?GREGGY_PARK.accent:park.accent):T.text, fontWeight:activePark===id?700:400, fontSize:14 }}>{p.name}</span>
-            </button>
-          ))}
-        </div>
-      )}
+      {/* Desktop: flex row with sidebar + content. Mobile: just content */}
+      <div style={{ display: isDesktop ? "flex" : "block", alignItems:"start" }}>
 
-      {/* Main content */}
-      <div style={{ padding:"16px 16px 0" }}>
-        {error && <div style={{ background:greggyMode?"#0d1f00":dark?"#3b0a0a":"#fee2e2",borderRadius:12,padding:"12px 16px",marginBottom:14,border:`1px solid ${greggyMode?"#1a5200":dark?"#7f1d1d":"#fecaca"}`,color:greggyMode?"#f5c800":dark?"#f87171":"#991b1b",fontSize:13,fontFamily:FONT }}>⚠️ {error}</div>}
+        {/* Desktop sidebar */}
+        {isDesktop && (
+          <div style={{ width:220, flexShrink:0, padding:"24px 12px 0 20px", borderRight:`1px solid ${T.border}`, position:"sticky", top:0, height:"100vh", overflowY:"auto" }}>
+            <div style={{ color:T.textSub, fontSize:11, fontFamily:FONT, fontWeight:600, textTransform:"uppercase", letterSpacing:1, marginBottom:12 }}>Parks</div>
+            {Object.entries(PARKS).map(([id,p]) => (
+              <button key={id} onClick={()=>setActivePark(id)} style={{
+                display:"flex", alignItems:"center", gap:10, width:"100%",
+                padding:"11px 14px", borderRadius:12, border:"none", marginBottom:6,
+                background: activePark===id ? (greggyMode?GREGGY_PARK.accentLight:park.accentLight) : T.bg,
+                cursor:"pointer", fontFamily:FONT, textAlign:"left",
+                borderLeft: activePark===id ? `3px solid ${greggyMode?GREGGY_PARK.accent:park.accent}` : "3px solid transparent",
+                transition:"all 0.15s",
+              }}>
+                <span style={{ fontSize:22 }}>{p.icon}</span>
+                <span style={{ color: activePark===id?(greggyMode?GREGGY_PARK.accent:park.accent):T.text, fontWeight:activePark===id?700:400, fontSize:14 }}>{p.name}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Main content */}
+        <div style={{ flex:1, padding:"16px 16px 48px" }}>
+          {error && <div style={{ background:greggyMode?"#0d1f00":dark?"#3b0a0a":"#fee2e2",borderRadius:12,padding:"12px 16px",marginBottom:14,border:`1px solid ${greggyMode?"#1a5200":dark?"#7f1d1d":"#fecaca"}`,color:greggyMode?"#f5c800":dark?"#f87171":"#991b1b",fontSize:13,fontFamily:FONT }}>⚠️ {error}</div>}
 
         {/* ── RIDES TAB ── */}
         {activeTab==="rides" && (
@@ -1107,8 +1102,9 @@ export default function App() {
             </div>
           </div>
         )}
-      </div>
-      </div>
-    </div>
+        </div>{/* end main content */}
+      </div>{/* end flex row */}
+      </div>{/* end responsive container */}
+    </div>{/* end root */}
   );
 }
