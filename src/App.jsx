@@ -1102,8 +1102,9 @@ export default function App() {
             </div>
           </div>
         )}
-        </div>{/* end main content */}
-      </div>{/* end flex row */}
-      </div>{/* end responsive container + root */}
+        </div>
+      </div>
+      </div>
+    </div>
   );
 }
