@@ -65,6 +65,8 @@ const GREGGY_PARK = {
 // Responsive breakpoints
 const BREAKPOINTS = { mobile: 480, tablet: 900 };
 
+const FONT = "'Inter', sans-serif";
+
 const PARKS = {
   mk: { name: "Magic Kingdom",     entityId: "75ea578a-adc8-4116-a54d-dccb60765ef9", icon: "🏰", color: "#1a3a6b", accent: "#2563eb", accentLight: "#dbeafe", accentDark: "#1e3a6e",
         mapLat: 28.4177, mapLng: -81.5812 },
