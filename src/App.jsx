@@ -64,7 +64,6 @@ const GREGGY_PARK = {
 
 // Responsive breakpoints
 const BREAKPOINTS = { mobile: 480, tablet: 900 };
-
 const FONT = "'Inter', sans-serif";
 
 const PARKS = {
@@ -372,11 +371,10 @@ function NoteModal({ ride, existingNote, onSave, onClose, accent, T }) {
 }
 
 // ── RideCard ──────────────────────────────────────────────────────────────────
-function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleFavorite, alertThreshold, onSetAlert, isHidden, onToggleHidden, note, onSetNote, T, dark }) {
+function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleFavorite, alertThreshold, onSetAlert, isHidden, onToggleHidden, note, onOpenNoteModal, T, dark }) {
   const [expanded, setExpanded] = useState(false);
   const [trendData, setTrendData] = useState(null);
   const [trendLoading, setTrendLoading] = useState(false);
-  const [showNoteModal, setShowNoteModal] = useState(false);
   const thrill = inferThrill(ride.name);
   const details = getRideDetails(ride.name);
   const isOperating = ride.status === "OPERATING";
@@ -421,7 +419,7 @@ function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleF
         <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
           <button onClick={e=>{e.stopPropagation();onToggleFavorite();}} style={{ background:"none",border:"none",cursor:"pointer",fontSize:18,padding:4 }}>{isFavorite?"⭐":"☆"}</button>
           <button onClick={e=>{e.stopPropagation();onSetAlert();}} style={{ background:"none",border:"none",cursor:"pointer",fontSize:16,padding:4,opacity:hasAlert?1:0.35 }}>🔔</button>
-          <button onClick={e=>{e.stopPropagation();setShowNoteModal(true);}} style={{ background:"none",border:"none",cursor:"pointer",fontSize:16,padding:4,opacity:note?1:0.35 }} title={note?"Edit note":"Add note"}>📝</button>
+          <button onClick={e=>{e.stopPropagation();onOpenNoteModal();}} style={{ background:"none",border:"none",cursor:"pointer",fontSize:16,padding:4,opacity:note?1:0.35 }} title={note?"Edit note":"Add note"}>📝</button>
           <div style={{ textAlign:"right" }}>
             <WaitBadge minutes={wait} status={ride.status} dark={dark} />
             {isOperating && wait!=null && <div style={{ color:T.textMuted,fontSize:10,marginTop:3,fontFamily:FONT }}>standby</div>}
@@ -435,16 +433,6 @@ function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleF
           <span style={{ color:T.textMuted, fontSize:11, fontFamily:FONT }}>📝 </span>
           <span style={{ color:T.textSub, fontSize:12, fontFamily:FONT }}>{note}</span>
         </div>
-      )}
-
-      {showNoteModal && (
-        <NoteModal
-          ride={ride}
-          existingNote={note}
-          onSave={(text) => { onSetNote(text); setShowNoteModal(false); }}
-          onClose={() => setShowNoteModal(false)}
-          accent={accent} T={T}
-        />
       )}
 
       {expanded && isOperating && (
@@ -498,11 +486,11 @@ function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleF
                     <div style={{ color:accent, fontSize:11, fontFamily:FONT, fontWeight:600, marginBottom:4 }}>📝 My Note</div>
                     <div style={{ color:T.textSub, fontSize:13, fontFamily:FONT, lineHeight:1.5 }}>{note}</div>
                   </div>
-                  <button onClick={() => setShowNoteModal(true)} style={{ background:"none", border:"none", color:T.textMuted, fontSize:12, fontFamily:FONT, cursor:"pointer", flexShrink:0, padding:"2px 6px" }}>Edit</button>
+                  <button onClick={() => onOpenNoteModal()} style={{ background:"none", border:"none", color:T.textMuted, fontSize:12, fontFamily:FONT, cursor:"pointer", flexShrink:0, padding:"2px 6px" }}>Edit</button>
                 </div>
               </div>
             ) : (
-              <button onClick={() => setShowNoteModal(true)} style={{ width:"100%", padding:9, borderRadius:10, border:`1px dashed ${T.border}`, background:"transparent", color:T.textMuted, fontFamily:FONT, fontSize:12, cursor:"pointer" }}>
+              <button onClick={() => onOpenNoteModal()} style={{ width:"100%", padding:9, borderRadius:10, border:`1px dashed ${T.border}`, background:"transparent", color:T.textMuted, fontFamily:FONT, fontSize:12, cursor:"pointer" }}>
                 📝 Add a note to this ride
               </button>
             )}
@@ -630,6 +618,7 @@ export default function App() {
   // sortBy: "wait_asc" | "wait_desc" | "name_asc" | "name_desc"
   const [sortBy, setSortBy]         = useState("wait_asc");
   const [alertModal, setAlertModal] = useState(null);
+  const [noteModal, setNoteModal]   = useState(null); // ride object or null
   // In-app alert banners
   const [banners, setBanners]       = useState([]);
   const firedAlerts                 = useRef({});
@@ -668,7 +657,7 @@ export default function App() {
     syncTimer.current = setTimeout(() => {
       saveProfile(token, { favorites, alerts, hidden, notes, dark, sortBy });
     }, 1500);
-  }, [token, profileLoaded, favorites, alerts, hidden, dark, sortBy]);
+  }, [token, profileLoaded, favorites, alerts, hidden, notes, dark, sortBy]);
 
   const handleLogin = (newToken, newUsername) => {
     localStorage.setItem("dwt_token",    newToken);
@@ -853,6 +842,16 @@ export default function App() {
           onSave={t=>saveAlert(alertModal.id,t)} onClose={()=>setAlertModal(null)} accent={park.accent} T={T} />
       )}
 
+      {noteModal && (
+        <NoteModal
+          ride={noteModal}
+          existingNote={notes[noteModal.id] || ""}
+          onSave={(text) => { setNote(noteModal.id, text); setNoteModal(null); }}
+          onClose={() => setNoteModal(null)}
+          accent={park.accent} T={T}
+        />
+      )}
+
       {showMap && <MapModal park={park} onClose={()=>setShowMap(false)} T={T} dark={dark} />}
 
       {/* Header */}
@@ -1033,7 +1032,7 @@ export default function App() {
                     isFavorite={!!favorites[ride.id]} onToggleFavorite={()=>toggleFavorite(ride.id)}
                     alertThreshold={alerts[ride.id]??null} onSetAlert={()=>setAlertModal(ride)}
                     isHidden={!!hidden[ride.id]} onToggleHidden={()=>toggleHidden(ride.id)}
-                    note={notes[ride.id]||""} onSetNote={(text)=>setNote(ride.id,text)}
+                    note={notes[ride.id]||""} onOpenNoteModal={()=>setNoteModal(ride)}
                     T={T} dark={dark} />
                 ))}
               </>
