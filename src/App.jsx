@@ -2,7 +2,10 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import TrendChart from "./TrendChart.jsx";
 import CrowdTrend from "./CrowdTrend.jsx";
 import AuthScreen from "./AuthScreen.jsx";
+import CrowdCalendar from "./CrowdCalendar.jsx";
 import { getRideDetails, fmtHeight } from "./rideDetails.js";
+import { bestHours, PARK_OPEN_HOUR, HOUR_LABELS, mergeWithTypical } from "./trends.js";
+import { getETHour, getETDay } from "./etHour.js";
 
 // ── Profile sync helpers ──────────────────────────────────────────────────────
 async function loadProfile(token) {
@@ -382,6 +385,15 @@ function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleF
   const hasAlert = alertThreshold != null;
   const favBg = dark ? accentDark : accentLight;
 
+  // Is right now one of the 3 best times to ride?
+  const isBestTime = (() => {
+    if (!isOperating || wait == null) return false;
+    const nowIdx = getETHour() - PARK_OPEN_HOUR;
+    if (nowIdx < 0 || nowIdx >= HOUR_LABELS.length) return false;
+    const { merged } = mergeWithTypical(trendData?.hourlyAvg ?? null, thrill);
+    return bestHours(merged).some(b => b.i === nowIdx);
+  })();
+
   useEffect(() => {
     if (!expanded || trendLoading) return;
     setTrendLoading(true);
@@ -426,6 +438,14 @@ function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleF
           </div>
         </div>
       </div>
+
+      {/* Best time NOW banner */}
+      {isBestTime && (
+        <div style={{ marginTop:8, padding:"6px 10px", borderRadius:8, background:dark?"#052e16":"#dcfce7", border:`1px solid ${dark?"#166534":"#86efac"}`, display:"flex", alignItems:"center", gap:6 }}>
+          <span style={{ fontSize:14 }}>⭐</span>
+          <span style={{ color:dark?"#4ade80":"#15803d", fontSize:12, fontFamily:FONT, fontWeight:700 }}>Best time to ride right now!</span>
+        </div>
+      )}
 
       {/* Note preview — always visible when note exists */}
       {note && !expanded && (
@@ -605,7 +625,8 @@ export default function App() {
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState(null);
   const [lastRefresh, setLastRefresh] = useState(null);
-  const [showMap, setShowMap]       = useState(false);
+  const [showMap, setShowMap]           = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
   const [schedules, setSchedules]   = useState({});
 
   const [favorites, setFavorites]   = useState(() => loadPref("dwt_favorites", {}));
@@ -853,6 +874,7 @@ export default function App() {
       )}
 
       {showMap && <MapModal park={park} onClose={()=>setShowMap(false)} T={T} dark={dark} />}
+      {showCalendar && <CrowdCalendar T={T} dark={dark} accent={park.accent} accentLight={park.accentLight} accentDark={park.accentDark} onClose={()=>setShowCalendar(false)} />}
 
       {/* Header */}
       <div style={{ background:greggyMode?"#1a5200":park.color, padding:`${isDesktop?"28px":"52px"} 20px 20px`, position:"relative", overflow:"hidden",
@@ -913,6 +935,7 @@ export default function App() {
           }}>🐢 {greggyMode?"Exit Greggy Mode":"Greggy Mode"}</button>
           <div style={{ flex:1 }} />
           <button onClick={()=>setShowMap(true)} style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>🗺</button>
+          <button onClick={()=>setShowCalendar(true)} title="Crowd Calendar" style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>📅</button>
           <a href="https://disneyworld.disney.go.com/app/" target="_blank" rel="noreferrer"
             style={{ background:"rgba(255,255,255,0.15)",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,textDecoration:"none",display:"inline-flex",alignItems:"center" }}>🏰</a>
           <button onClick={()=>setDark(d=>!d)} style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>
