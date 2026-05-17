@@ -42,10 +42,11 @@ function mergeParks(parks) {
 
 export default function CrowdCalendar({ T, dark, accent, accentLight, accentDark, onClose }) {
   const [selectedPark, setSelectedPark] = useState("all");
-  const [days, setDays]   = useState(30);
-  const [data, setData]   = useState(null);
+  const [days, setDays]       = useState(30);
+  const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError]     = useState(null);
+  const [selectedDay, setSelectedDay] = useState(null); // { date, dow, parkData: {mk,ep,hs,ak} }
 
   useEffect(() => {
     setLoading(true); setError(null);
@@ -137,8 +138,17 @@ export default function CrowdCalendar({ T, dark, accent, accentLight, accentDark
                         const isToday = day.date === today;
                         const cellBg = lvl ? (dark?lvl.darkBg:lvl.bg) : T.surface;
                         const cellFg = lvl ? (dark?lvl.darkFg:lvl.color) : T.textMuted;
+                        const handleDayClick = () => {
+                          if (!data?.parks) return;
+                          const parkData = {};
+                          PARK_IDS.forEach(pid => {
+                            const parkDay = data.parks[pid]?.find(d => d.date === day.date);
+                            if (parkDay) parkData[pid] = parkDay;
+                          });
+                          setSelectedDay({ date: day.date, dow: day.dow, parkData });
+                        };
                         return (
-                          <div key={di} title={`${day.date}: ${lvl?.label??"No data"} (~${day.avg??'?'}m avg)`} style={{ background:cellBg,borderRadius:8,padding:"6px 2px",textAlign:"center",border:isToday?`2px solid ${accent}`:`1px solid ${day.isReal?"transparent":T.border}`,opacity:day.isReal?1:0.65,minHeight:44,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2 }}>
+                          <div key={di} onClick={handleDayClick} title={`${day.date}: ${lvl?.label??"No data"} (~${day.avg??'?'}m avg)`} style={{ background:cellBg,borderRadius:8,padding:"6px 2px",textAlign:"center",border:isToday?`2px solid ${accent}`:`1px solid ${day.isReal?"transparent":T.border}`,opacity:day.isReal?1:0.65,minHeight:44,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,cursor:"pointer",transition:"opacity 0.15s" }}>
                             <div style={{ color:isToday?accent:T.textSub,fontSize:11,fontWeight:isToday?800:500,fontFamily:FONT }}>{parseInt(day.date.slice(8,10))}</div>
                             {lvl && <>
                               <div style={{ width:8,height:8,borderRadius:"50%",background:dark?lvl.darkFg:lvl.color }} />
@@ -196,6 +206,51 @@ export default function CrowdCalendar({ T, dark, accent, accentLight, accentDark
             </>
           )}
         </div>
+
+        {/* Day detail panel */}
+        {selectedDay && (
+          <div style={{ position:"sticky", bottom:0, background:T.surface, borderTop:`1px solid ${T.border}`, padding:"16px 20px 32px" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+              <div>
+                <div style={{ color:T.text, fontWeight:700, fontSize:16, fontFamily:FONT }}>
+                  {new Date(selectedDay.date+"T12:00:00").toLocaleDateString([],{weekday:"long",month:"long",day:"numeric"})}
+                </div>
+                <div style={{ color:T.textMuted, fontSize:11, fontFamily:FONT, marginTop:2 }}>
+                  Crowd levels by park
+                </div>
+              </div>
+              <button onClick={() => setSelectedDay(null)} style={{ background:"none", border:"none", color:T.textMuted, fontSize:20, cursor:"pointer" }}>✕</button>
+            </div>
+            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+              {PARK_IDS.map(pid => {
+                const parkDay = selectedDay.parkData[pid];
+                const lvl = parkDay ? crowdLevel(parkDay.avg) : null;
+                return (
+                  <div key={pid} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 14px", borderRadius:12, background:lvl?(dark?lvl.darkBg:lvl.bg):T.bg, border:`1px solid ${lvl?(dark?lvl.darkFg:lvl.color)+"33":T.border}` }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                      <span style={{ fontSize:20 }}>{PARK_ICONS[pid]}</span>
+                      <div>
+                        <div style={{ color:T.text, fontWeight:600, fontSize:13, fontFamily:FONT }}>{PARK_NAMES[pid]}</div>
+                        {parkDay && (
+                          <div style={{ color:lvl?(dark?lvl.darkFg:lvl.color):T.textMuted, fontSize:11, fontFamily:FONT }}>
+                            ~{parkDay.avg}m avg wait · {parkDay.isReal ? "real data" : "estimated"}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    {lvl ? (
+                      <span style={{ background:dark?lvl.darkBg:lvl.bg, color:dark?lvl.darkFg:lvl.color, borderRadius:20, padding:"4px 12px", fontSize:12, fontWeight:700, fontFamily:FONT, border:`1px solid ${(dark?lvl.darkFg:lvl.color)}44` }}>
+                        {lvl.label}
+                      </span>
+                    ) : (
+                      <span style={{ color:T.textMuted, fontSize:12, fontFamily:FONT }}>No data</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
