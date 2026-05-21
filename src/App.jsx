@@ -954,10 +954,10 @@ export default function App() {
           </div>
         )}
 
-        {/* Rides / Shows tab */}
+        {/* Rides / Shows / Favorites tab */}
         <div style={{ display:"flex",gap:6,background:"rgba(0,0,0,0.2)",borderRadius:12,padding:4 }}>
-          {[{id:"rides",label:"🎢 Rides"},{id:"shows",label:"🎭 Shows"}].map(t=>(
-            <button key={t.id} onClick={()=>setActiveTab(t.id)} style={{ flex:1,padding:"8px 0",borderRadius:9,border:"none",background:activeTab===t.id?"#fff":"transparent",color:activeTab===t.id?(greggyMode?"#1a5200":park.color):"rgba(255,255,255,0.6)",fontFamily:FONT,fontWeight:activeTab===t.id?700:500,fontSize:13,cursor:"pointer",transition:"all 0.2s",boxShadow:activeTab===t.id?"0 1px 4px rgba(0,0,0,0.2)":"none" }}>{t.label}</button>
+          {[{id:"rides",label:"🎢 Rides"},{id:"shows",label:"🎭 Shows"},{id:"favorites",label:"⭐ Favs"}].map(t=>(
+            <button key={t.id} onClick={()=>setActiveTab(t.id)} style={{ flex:1,padding:"8px 0",borderRadius:9,border:"none",background:activeTab===t.id?"#fff":"transparent",color:activeTab===t.id?(greggyMode?"#1a5200":park.color):"rgba(255,255,255,0.6)",fontFamily:FONT,fontWeight:activeTab===t.id?700:500,fontSize:12,cursor:"pointer",transition:"all 0.2s",boxShadow:activeTab===t.id?"0 1px 4px rgba(0,0,0,0.2)":"none" }}>{t.label}</button>
           ))}
         </div>
       </div>
@@ -1107,6 +1107,57 @@ export default function App() {
                 ))}
               </>
             )}
+          </>
+        )}
+
+        {/* ── FAVORITES TAB ── */}
+        {activeTab==="favorites" && (
+          <>
+            {/* Favorite rides */}
+            {(() => {
+              const favRides = rideEntities.filter(r => favorites[r.id]);
+              const favShows = showEntities.filter(s => favorites[s.id]);
+              if (!favRides.length && !favShows.length && !loading) return (
+                <div style={{ textAlign:"center", padding:"48px 20px", color:T.textMuted, fontFamily:FONT }}>
+                  <div style={{ fontSize:40, marginBottom:12 }}>⭐</div>
+                  <div style={{ fontSize:15, fontWeight:600, color:T.textSub, marginBottom:8 }}>No favorites yet</div>
+                  <div style={{ fontSize:13 }}>Tap ☆ on any ride or show to add it here</div>
+                </div>
+              );
+              return (
+                <>
+                  {favRides.length > 0 && (
+                    <>
+                      <div style={{ color:T.textMuted,fontSize:11,fontFamily:FONT,marginBottom:10,textTransform:"uppercase",letterSpacing:1,fontWeight:600 }}>
+                        ⭐ {favRides.length} Favorite Ride{favRides.length!==1?"s":""}
+                      </div>
+                      {favRides.map(ride=>(
+                        <RideCard key={ride.id} ride={ride} accent={park.accent} accentLight={park.accentLight} accentDark={park.accentDark}
+                          isFavorite={true} onToggleFavorite={()=>toggleFavorite(ride.id)}
+                          alertThreshold={alerts[ride.id]??null} onSetAlert={()=>setAlertModal(ride)}
+                          isHidden={false} onToggleHidden={()=>toggleHidden(ride.id)}
+                          note={notes[ride.id]||""} onOpenNoteModal={()=>setNoteModal(ride)}
+                          T={T} dark={dark} />
+                      ))}
+                    </>
+                  )}
+                  {favShows.length > 0 && (
+                    <>
+                      <div style={{ color:T.textMuted,fontSize:11,fontFamily:FONT,marginBottom:10,marginTop:favRides.length?14:0,textTransform:"uppercase",letterSpacing:1,fontWeight:600 }}>
+                        ⭐ {favShows.length} Favorite Show{favShows.length!==1?"s":""}
+                      </div>
+                      {favShows.map(show=>(
+                        <ShowCard key={show.id} show={show} accent={park.accent} accentLight={park.accentLight} accentDark={park.accentDark}
+                          isFavorite={true} onToggleFavorite={()=>toggleFavorite(show.id)}
+                          isHidden={false} onToggleHidden={()=>toggleHidden(show.id)}
+                          T={T} dark={dark} />
+                      ))}
+                    </>
+                  )}
+                </>
+              );
+            })()}
+            {loading && Array.from({length:3}).map((_,i)=><SkeletonCard key={i} T={T} />)}
           </>
         )}
 
