@@ -3,6 +3,7 @@ import TrendChart from "./TrendChart.jsx";
 import CrowdTrend from "./CrowdTrend.jsx";
 import AuthScreen from "./AuthScreen.jsx";
 import CrowdCalendar from "./CrowdCalendar.jsx";
+import DayPlanner from "./DayPlanner.jsx";
 import { getRideDetails, fmtHeight } from "./rideDetails.js";
 import { bestHours, PARK_OPEN_HOUR, HOUR_LABELS, mergeWithTypical } from "./trends.js";
 import { getETHour, getETDay } from "./etHour.js";
@@ -627,6 +628,7 @@ export default function App() {
   const [lastRefresh, setLastRefresh] = useState(null);
   const [showMap, setShowMap]           = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
+  const [showPlanner, setShowPlanner]   = useState(false);
   const [schedules, setSchedules]   = useState({});
 
   const [favorites, setFavorites]   = useState(() => loadPref("dwt_favorites", {}));
@@ -875,6 +877,7 @@ export default function App() {
 
       {showMap && <MapModal park={park} onClose={()=>setShowMap(false)} T={T} dark={dark} />}
       {showCalendar && <CrowdCalendar T={T} dark={dark} accent={park.accent} accentLight={park.accentLight} accentDark={park.accentDark} onClose={()=>setShowCalendar(false)} />}
+      {showPlanner && <DayPlanner T={T} dark={dark} accent={park.accent} accentLight={park.accentLight} accentDark={park.accentDark} parks={ridesData} onClose={()=>setShowPlanner(false)} token={token} />}
 
       {/* Header */}
       <div style={{ background:greggyMode?"#1a5200":park.color, padding:`${isDesktop?"28px":"52px"} 20px 20px`, position:"relative", overflow:"hidden",
@@ -936,6 +939,7 @@ export default function App() {
           <div style={{ flex:1 }} />
           <button onClick={()=>setShowMap(true)} style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>🗺</button>
           <button onClick={()=>setShowCalendar(true)} title="Crowd Calendar" style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>📅</button>
+          <button onClick={()=>setShowPlanner(true)} title="Day Planner" style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>📋</button>
           <a href="https://disneyworld.disney.go.com/app/" target="_blank" rel="noreferrer"
             style={{ background:"rgba(255,255,255,0.15)",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,textDecoration:"none",display:"inline-flex",alignItems:"center" }}>🏰</a>
           <button onClick={()=>setDark(d=>!d)} style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>
