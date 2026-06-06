@@ -19,10 +19,15 @@ function todayKey() {
   return new Date().toISOString().slice(0,10);
 }
 
-export default function DayPlanner({ T, dark, accent, accentLight, accentDark, parks, onClose, token }) {
+export default function DayPlanner({ T, dark, accent, accentLight, accentDark, parks, onClose, token, prefill, activeParkId }) {
   const [plans, setPlans]           = useState(() => loadPlans());
   const [planDate, setPlanDate]     = useState(todayKey());
-  const [showAddModal, setShowAddModal] = useState(null); // hour value or null
+  const [showAddModal, setShowAddModal] = useState(null);
+
+  // Auto-open add modal when coming from a ride card
+  useEffect(() => {
+    if (prefill) setShowAddModal(true);
+  }, [prefill]);
   const [editItem, setEditItem]     = useState(null);
   const [syncing, setSyncing]       = useState(false);
 
@@ -194,6 +199,7 @@ export default function DayPlanner({ T, dark, accent, accentLight, accentDark, p
         <AddItemModal
           T={T} dark={dark} accent={accent} accentLight={accentLight}
           typeConfig={typeConfig} parks={parks}
+          prefill={prefill} activeParkId={activeParkId}
           onAdd={addItem} onClose={()=>setShowAddModal(false)}
         />
       )}
@@ -201,15 +207,47 @@ export default function DayPlanner({ T, dark, accent, accentLight, accentDark, p
   );
 }
 
-function AddItemModal({ T, dark, accent, accentLight, typeConfig, parks, onAdd, onClose }) {
-  const [type,     setType]     = useState("ride");
-  const [name,     setName]     = useState("");
-  const [parkId,   setParkId]   = useState("");
+function AddItemModal({ T, dark, accent, accentLight, typeConfig, parks, prefill, activeParkId, onAdd, onClose }) {
+  const [type,     setType]     = useState(prefill?.type || "ride");
+  const [name,     setName]     = useState(prefill?.name || "");
+  const [parkId,   setParkId]   = useState(prefill?.parkId || activeParkId || "");
   const [hour,     setHour]     = useState(10);
   const [minute,   setMinute]   = useState(0);
   const [duration, setDuration] = useState(30);
   const [note,     setNote]     = useState("");
   const [search,   setSearch]   = useState("");
+
+  // Compute best time suggestion from trend data
+  const bestTimeSuggestion = (() => {
+    if (!prefill?.name || !parks) return null;
+    try {
+      // Find the ride in live data to get its entity type
+      for (const [pid, parkData] of Object.entries(parks)) {
+        const entities = parkData?.liveData || [];
+        const found = entities.find(e => e.name === prefill.name);
+        if (found) {
+          // Use typical curves as approximation (real trend via API not available here)
+          const thrillMap = { high: "high", medium: "medium", low: "low" };
+          const n = prefill.name.toLowerCase();
+          const thrill = (n.includes("mountain") || n.includes("coaster") || n.includes("tower") || 
+            n.includes("everest") || n.includes("resistance") || n.includes("slinky") || 
+            n.includes("guardians") || n.includes("tron")) ? "high" :
+            (n.includes("soarin") || n.includes("test track") || n.includes("frozen") || 
+            n.includes("haunted") || n.includes("pirates")) ? "medium" : "low";
+          const CURVES = {
+            high:   [0.45,0.90,1.25,1.45,1.50,1.45,1.35,1.20,1.05,0.90,0.80,0.65,0.50,0.35],
+            medium: [0.35,0.65,1.00,1.25,1.35,1.30,1.20,1.10,0.95,0.85,0.75,0.60,0.45,0.30],
+            low:    [0.30,0.50,0.75,0.95,1.05,1.10,1.00,0.90,0.80,0.70,0.60,0.50,0.35,0.25],
+          };
+          const curve = CURVES[thrill];
+          const HOUR_LABELS = ["9am","10am","11am","12pm","1pm","2pm","3pm","4pm","5pm","6pm","7pm","8pm","9pm","10pm"];
+          const best = curve.map((v,i)=>({v,i,label:HOUR_LABELS[i],hour:9+i})).sort((a,b)=>a.v-b.v).slice(0,3);
+          return best;
+        }
+      }
+    } catch {}
+    return null;
+  })();
 
   // Pull ride/show names from all parks for autocomplete
   const suggestions = (() => {
@@ -276,6 +314,28 @@ function AddItemModal({ T, dark, accent, accentLight, typeConfig, parks, onAdd, 
             {["mk","ep","hs","ak"].map(pid=><option key={pid} value={pid}>{PARK_ICONS[pid]} {PARK_NAMES[pid]}</option>)}
           </select>
         </div>
+
+        {/* Best time suggestion */}
+        {bestTimeSuggestion && (
+          <div style={{ marginBottom:14, background:dark?"#052e16":"#dcfce7", borderRadius:12, padding:"12px 14px", border:`1px solid ${dark?"#166534":"#86efac"}` }}>
+            <div style={{ color:dark?"#4ade80":"#15803d", fontWeight:700, fontSize:12, fontFamily:FONT, marginBottom:8 }}>
+              ⭐ Suggested best times for {prefill?.name}
+            </div>
+            <div style={{ display:"flex", gap:8 }}>
+              {bestTimeSuggestion.map((b,i) => (
+                <button key={i} onClick={()=>setHour(b.hour)} style={{
+                  flex:1, padding:"8px 4px", borderRadius:10, border:`1.5px solid ${hour===b.hour?(dark?"#4ade80":"#15803d"):"transparent"}`,
+                  background: hour===b.hour?(dark?"#166534":"#bbf7d0"):(dark?"#064e3b":"#f0fdf4"),
+                  cursor:"pointer", textAlign:"center",
+                }}>
+                  <div style={{ color:dark?"#4ade80":"#15803d", fontWeight:700, fontSize:13, fontFamily:FONT }}>{b.label}</div>
+                  <div style={{ color:dark?"#86efac":"#166534", fontSize:10, fontFamily:FONT }}>Low crowd</div>
+                </button>
+              ))}
+            </div>
+            <div style={{ color:dark?"#86efac":"#166534", fontSize:10, fontFamily:FONT, marginTop:6 }}>Tap a time to use it, or set your own below</div>
+          </div>
+        )}
 
         {/* Time */}
         <div style={{ display:"flex",gap:10,marginBottom:12 }}>

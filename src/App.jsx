@@ -375,7 +375,7 @@ function NoteModal({ ride, existingNote, onSave, onClose, accent, T }) {
 }
 
 // ── RideCard ──────────────────────────────────────────────────────────────────
-function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleFavorite, alertThreshold, onSetAlert, isHidden, onToggleHidden, note, onOpenNoteModal, T, dark }) {
+function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleFavorite, alertThreshold, onSetAlert, isHidden, onToggleHidden, note, onOpenNoteModal, onAddToPlan, T, dark }) {
   const [expanded, setExpanded] = useState(false);
   const [trendData, setTrendData] = useState(null);
   const [trendLoading, setTrendLoading] = useState(false);
@@ -433,6 +433,7 @@ function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleF
           <button onClick={e=>{e.stopPropagation();onToggleFavorite();}} style={{ background:"none",border:"none",cursor:"pointer",fontSize:18,padding:4 }}>{isFavorite?"⭐":"☆"}</button>
           <button onClick={e=>{e.stopPropagation();onSetAlert();}} style={{ background:"none",border:"none",cursor:"pointer",fontSize:16,padding:4,opacity:hasAlert?1:0.35 }}>🔔</button>
           <button onClick={e=>{e.stopPropagation();onOpenNoteModal();}} style={{ background:"none",border:"none",cursor:"pointer",fontSize:16,padding:4,opacity:note?1:0.35 }} title={note?"Edit note":"Add note"}>📝</button>
+          <button onClick={e=>{e.stopPropagation();onAddToPlan();}} title="Add to plan" style={{ background:"none",border:"none",cursor:"pointer",fontSize:15,padding:4,opacity:0.6 }}>📋</button>
           <div style={{ textAlign:"right" }}>
             <WaitBadge minutes={wait} status={ride.status} dark={dark} />
             {isOperating && wait!=null && <div style={{ color:T.textMuted,fontSize:10,marginTop:3,fontFamily:FONT }}>standby</div>}
@@ -629,6 +630,7 @@ export default function App() {
   const [showMap, setShowMap]           = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
   const [showPlanner, setShowPlanner]   = useState(false);
+  const [planRide, setPlanRide]         = useState(null);
   const [schedules, setSchedules]   = useState({});
 
   const [favorites, setFavorites]   = useState(() => loadPref("dwt_favorites", {}));
@@ -877,7 +879,7 @@ export default function App() {
 
       {showMap && <MapModal park={park} onClose={()=>setShowMap(false)} T={T} dark={dark} />}
       {showCalendar && <CrowdCalendar T={T} dark={dark} accent={park.accent} accentLight={park.accentLight} accentDark={park.accentDark} onClose={()=>setShowCalendar(false)} />}
-      {showPlanner && <DayPlanner T={T} dark={dark} accent={park.accent} accentLight={park.accentLight} accentDark={park.accentDark} parks={ridesData} onClose={()=>setShowPlanner(false)} token={token} />}
+      {showPlanner && <DayPlanner T={T} dark={dark} accent={park.accent} accentLight={park.accentLight} accentDark={park.accentDark} parks={ridesData} onClose={()=>{setShowPlanner(false);setPlanRide(null);}} token={token} prefill={planRide} activeParkId={activePark} />}
 
       {/* Header */}
       <div style={{ background:greggyMode?"#1a5200":park.color, padding:`${isDesktop?"28px":"52px"} 20px 20px`, position:"relative", overflow:"hidden",
@@ -1060,6 +1062,7 @@ export default function App() {
                     alertThreshold={alerts[ride.id]??null} onSetAlert={()=>setAlertModal(ride)}
                     isHidden={!!hidden[ride.id]} onToggleHidden={()=>toggleHidden(ride.id)}
                     note={notes[ride.id]||""} onOpenNoteModal={()=>setNoteModal(ride)}
+                    onAddToPlan={()=>{setPlanRide({name:ride.name,parkId:activePark,type:"ride"});setShowPlanner(true);}}
                     T={T} dark={dark} />
                 ))}
               </>
@@ -1141,6 +1144,7 @@ export default function App() {
                           alertThreshold={alerts[ride.id]??null} onSetAlert={()=>setAlertModal(ride)}
                           isHidden={false} onToggleHidden={()=>toggleHidden(ride.id)}
                           note={notes[ride.id]||""} onOpenNoteModal={()=>setNoteModal(ride)}
+                          onAddToPlan={()=>{setPlanRide({name:ride.name,parkId:activePark,type:"ride"});setShowPlanner(true);}}
                           T={T} dark={dark} />
                       ))}
                     </>
