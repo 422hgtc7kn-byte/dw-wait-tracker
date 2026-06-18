@@ -1,0 +1,185 @@
+// src/disneyData.js
+// Static Disney World park data: rides, shows, and dining per park.
+// Used to power the filtered dropdowns in the Day Planner add modal.
+
+export const PARK_ITEMS = {
+  mk: {
+    ride: [
+      "Seven Dwarfs Mine Train",
+      "Space Mountain",
+      "TRON Lightcycle / Run",
+      "Big Thunder Mountain Railroad",
+      "Tiana's Bayou Adventure",
+      "Haunted Mansion",
+      "Pirates of the Caribbean",
+      "Peter Pan's Flight",
+      "The Many Adventures of Winnie the Pooh",
+      "Buzz Lightyear's Space Ranger Spin",
+      "It's a Small World",
+      "Jungle Cruise",
+      "Mad Tea Party",
+      "The Magic Carpets of Aladdin",
+      "Dumbo the Flying Elephant",
+      "The Barnstormer",
+      "Prince Charming Regal Carrousel",
+      "Tomorrowland Speedway",
+      "Tomorrowland Transit Authority PeopleMover",
+      "Under the Sea – Journey of the Little Mermaid",
+      "Astro Orbiter",
+      "Walt Disney World Railroad",
+      "Liberty Square Riverboat",
+    ],
+    show: [
+      "Enchantment (Fireworks & Projection Show)",
+      "Festival of Fantasy Parade",
+      "Mickey's Magical Friendship Faire",
+      "Move It! Shake It! MousekeDance It! Street Party",
+      "Country Bear Jamboree",
+      "Walt Disney's Carousel of Progress",
+      "Hall of Presidents",
+      "Monsters, Inc. Laugh Floor",
+    ],
+    meal: [
+      "Be Our Guest Restaurant",
+      "Cinderella's Royal Table",
+      "The Crystal Palace",
+      "Liberty Tree Tavern",
+      "Tony's Town Square Restaurant",
+      "The Plaza Restaurant",
+      "Columbia Harbour House",
+      "Cosmic Ray's Starlight Café",
+      "Pecos Bill Tall Tale Inn and Café",
+      "Pinocchio Village Haus",
+      "Casey's Corner",
+      "Main Street Bakery (Starbucks)",
+      "Sleepy Hollow",
+      "Storybook Treats",
+      "The Friar's Nook",
+    ],
+  },
+
+  ep: {
+    ride: [
+      "Guardians of the Galaxy: Cosmic Rewind",
+      "Remy's Ratatouille Adventure",
+      "Frozen Ever After",
+      "Test Track",
+      "Soarin' Around the World",
+      "Mission: SPACE",
+      "Living with the Land",
+      "Spaceship Earth",
+      "Journey Into Imagination with Figment",
+      "The Seas with Nemo & Friends",
+      "Turtle Talk with Crush",
+    ],
+    show: [
+      "Luminous the Symphony of Us (Nighttime Spectacular)",
+      "The American Adventure",
+      "Voices of Liberty",
+      "Awesome Planet",
+      "Reflections of China",
+      "O Canada!",
+      "Impressions de France",
+    ],
+    meal: [
+      "Space 220 Restaurant",
+      "Le Cellier Steakhouse",
+      "Coral Reef Restaurant",
+      "Via Napoli Ristorante e Pizzeria",
+      "Teppan Edo",
+      "Tokyo Dining",
+      "Akershus Royal Banquet Hall",
+      "Biergarten Restaurant",
+      "Garden Grill Restaurant",
+      "Spice Road Table",
+      "Tutto Italia Ristorante",
+      "Sunshine Seasons",
+      "Katsura Grill",
+      "Lotus Blossom Café",
+      "Nine Dragons Restaurant",
+      "Rose & Crown Dining Room",
+      "Tangierine Café",
+    ],
+  },
+
+  hs: {
+    ride: [
+      "Star Wars: Rise of the Resistance",
+      "Millennium Falcon: Smugglers Run",
+      "Mickey & Minnie's Runaway Railway",
+      "Slinky Dog Dash",
+      "Rock 'n' Roller Coaster Starring Aerosmith",
+      "The Twilight Zone Tower of Terror",
+      "Alien Swirling Saucers",
+      "Toy Story Mania!",
+      "Star Tours – The Adventures Continue",
+    ],
+    show: [
+      "Fantasmic!",
+      "Star Wars: A Galactic Spectacular (Fireworks)",
+      "Indiana Jones Epic Stunt Spectacular",
+      "For the First Time in Forever: A Frozen Sing-Along",
+      "Beauty and the Beast – Live on Stage",
+      "Jedi Training: Trials of the Temple",
+      "Disney Junior Play & Dance!",
+      "Muppet*Vision 3D",
+    ],
+    meal: [
+      "50's Prime Time Café",
+      "Hollywood & Vine",
+      "Oga's Cantina",
+      "Sci-Fi Dine-In Theater Restaurant",
+      "The Hollywood Brown Derby",
+      "Docking Bay 7 Food and Cargo",
+      "Backlot Express",
+      "ABC Commissary",
+      "Woody's Lunch Box",
+      "PizzeRizzo",
+      "Rosie's All-American Café",
+    ],
+  },
+
+  ak: {
+    ride: [
+      "Avatar Flight of Passage",
+      "Na'vi River Journey",
+      "Expedition Everest",
+      "Kilimanjaro Safaris",
+      "Kali River Rapids",
+      "DINOSAUR",
+      "TriceraTop Spin",
+      "Wildlife Express Train",
+    ],
+    show: [
+      "Finding Nemo: The Big Blue… and Beyond!",
+      "Festival of the Lion King",
+      "Rivers of Light",
+      "UP! A Great Bird Adventure",
+      "Tree of Life Awakenings",
+      "Gorilla Falls Exploration Trail",
+      "Maharajah Jungle Trek",
+    ],
+    meal: [
+      "Tiffins Restaurant",
+      "Yak & Yeti Restaurant",
+      "Tusker House Restaurant",
+      "Rainforest Café at Animal Kingdom",
+      "Satu'li Canteen",
+      "Pizzafari",
+      "Restaurantosaurus",
+      "Flame Tree Barbecue",
+      "Harambe Market",
+    ],
+  },
+};
+
+/**
+ * Get sorted item names for a given park + type.
+ * Returns [] if park or type is missing/unrecognized.
+ * @param {string} parkId - 'mk' | 'ep' | 'hs' | 'ak'
+ * @param {'ride'|'show'|'meal'} type
+ */
+export function getParkItems(parkId, type) {
+  if (!parkId || !type) return [];
+  return PARK_ITEMS[parkId]?.[type] ?? [];
+}

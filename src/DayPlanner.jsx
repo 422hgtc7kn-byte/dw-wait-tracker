@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { getParkItems } from "./disneyData.js";
 
 const FONT = "'Inter', sans-serif";
 const PARK_ICONS = { mk:"🏰", ep:"🌍", hs:"🎬", ak:"🦁" };
@@ -209,30 +210,38 @@ export default function DayPlanner({ T, dark, accent, accentLight, accentDark, p
 
 function AddItemModal({ T, dark, accent, accentLight, typeConfig, parks, prefill, activeParkId, onAdd, onClose }) {
   const [type,     setType]     = useState(prefill?.type || "ride");
-  const [name,     setName]     = useState(prefill?.name || "");
   const [parkId,   setParkId]   = useState(prefill?.parkId || activeParkId || "");
+  const [name,     setName]     = useState(prefill?.name || "");
   const [hour,     setHour]     = useState(10);
   const [minute,   setMinute]   = useState(0);
   const [duration, setDuration] = useState(30);
   const [note,     setNote]     = useState("");
-  const [search,   setSearch]   = useState("");
 
-  // Compute best time suggestion from trend data
+  // Whether the current type uses the filtered dropdown (ride/show/meal)
+  const usesDropdown = ["ride", "show", "meal"].includes(type);
+
+  // Items available for the selected park + type
+  const dropdownItems = usesDropdown ? getParkItems(parkId, type) : [];
+
+  // When type or park changes, reset name if it's not in the new list
+  useEffect(() => {
+    if (!usesDropdown) return;
+    if (name && !dropdownItems.includes(name)) setName("");
+  }, [type, parkId]);
+
+  // Compute best time suggestion from live data when coming from a ride card
   const bestTimeSuggestion = (() => {
     if (!prefill?.name || !parks) return null;
     try {
-      // Find the ride in live data to get its entity type
       for (const [pid, parkData] of Object.entries(parks)) {
-        const entities = parkData?.liveData || [];
+        const entities = Array.isArray(parkData) ? parkData : (parkData?.liveData || []);
         const found = entities.find(e => e.name === prefill.name);
         if (found) {
-          // Use typical curves as approximation (real trend via API not available here)
-          const thrillMap = { high: "high", medium: "medium", low: "low" };
           const n = prefill.name.toLowerCase();
-          const thrill = (n.includes("mountain") || n.includes("coaster") || n.includes("tower") || 
-            n.includes("everest") || n.includes("resistance") || n.includes("slinky") || 
+          const thrill = (n.includes("mountain") || n.includes("coaster") || n.includes("tower") ||
+            n.includes("everest") || n.includes("resistance") || n.includes("slinky") ||
             n.includes("guardians") || n.includes("tron")) ? "high" :
-            (n.includes("soarin") || n.includes("test track") || n.includes("frozen") || 
+            (n.includes("soarin") || n.includes("test track") || n.includes("frozen") ||
             n.includes("haunted") || n.includes("pirates")) ? "medium" : "low";
           const CURVES = {
             high:   [0.45,0.90,1.25,1.45,1.50,1.45,1.35,1.20,1.05,0.90,0.80,0.65,0.50,0.35],
@@ -241,36 +250,31 @@ function AddItemModal({ T, dark, accent, accentLight, typeConfig, parks, prefill
           };
           const curve = CURVES[thrill];
           const HOUR_LABELS = ["9am","10am","11am","12pm","1pm","2pm","3pm","4pm","5pm","6pm","7pm","8pm","9pm","10pm"];
-          const best = curve.map((v,i)=>({v,i,label:HOUR_LABELS[i],hour:9+i})).sort((a,b)=>a.v-b.v).slice(0,3);
-          return best;
+          return curve.map((v,i)=>({v,i,label:HOUR_LABELS[i],hour:9+i})).sort((a,b)=>a.v-b.v).slice(0,3);
         }
       }
     } catch {}
     return null;
   })();
 
-  // Pull ride/show names from all parks for autocomplete
-  const suggestions = (() => {
-    if (!parks || !search.trim()) return [];
-    const q = search.toLowerCase();
-    const results = [];
-    for (const [pid, parkData] of Object.entries(parks)) {
-      const entities = parkData?.liveData || [];
-      for (const e of entities) {
-        if (e.name.toLowerCase().includes(q)) {
-          results.push({ name:e.name, parkId:pid, type: e.entityType==="SHOW"?"show":"ride" });
-        }
-      }
-    }
-    return results.slice(0,8);
-  })();
-
   function handleSubmit() {
     if (!name.trim()) return;
-    onAdd({ type, name:name.trim(), parkId:parkId||null, hour, minute, duration:duration||null, note:note.trim()||null });
+    onAdd({ type, name: name.trim(), parkId: parkId || null, hour, minute, duration: duration || null, note: note.trim() || null });
   }
 
-  const inputStyle = { width:"100%",padding:"10px 12px",borderRadius:10,border:`1px solid ${T.border}`,background:T.bg,color:T.text,fontFamily:FONT,fontSize:14,outline:"none",boxSizing:"border-box" };
+  const inputStyle = {
+    width:"100%", padding:"10px 12px", borderRadius:10,
+    border:`1px solid ${T.border}`, background:T.bg,
+    color:T.text, fontFamily:FONT, fontSize:14,
+    outline:"none", boxSizing:"border-box",
+    cursor:"pointer",
+  };
+
+  const labelStyle = {
+    color:T.textSub, fontSize:11, fontWeight:600,
+    textTransform:"uppercase", letterSpacing:1,
+    fontFamily:FONT, display:"block", marginBottom:6,
+  };
 
   return (
     <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center" }} onClick={onClose}>
@@ -281,41 +285,62 @@ function AddItemModal({ T, dark, accent, accentLight, typeConfig, parks, prefill
         {/* Type selector */}
         <div style={{ display:"flex",gap:6,marginBottom:16,flexWrap:"wrap" }}>
           {Object.entries(typeConfig).map(([id,tc])=>(
-            <button key={id} onClick={()=>setType(id)} style={{ background:type===id?accent:T.bg,color:type===id?"#fff":T.textSub,border:`1px solid ${type===id?accent:T.border}`,borderRadius:20,padding:"5px 12px",fontSize:12,fontWeight:type===id?700:400,cursor:"pointer",fontFamily:FONT }}>
+            <button key={id} onClick={()=>{ setType(id); setName(""); }} style={{ background:type===id?accent:T.bg,color:type===id?"#fff":T.textSub,border:`1px solid ${type===id?accent:T.border}`,borderRadius:20,padding:"5px 12px",fontSize:12,fontWeight:type===id?700:400,cursor:"pointer",fontFamily:FONT }}>
               {tc.icon} {id.charAt(0).toUpperCase()+id.slice(1)}
             </button>
           ))}
         </div>
 
-        {/* Name with search */}
-        <div style={{ marginBottom:12,position:"relative" }}>
-          <label style={{ color:T.textSub,fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:1,fontFamily:FONT,display:"block",marginBottom:6 }}>Name</label>
-          <input value={name} onChange={e=>{setName(e.target.value);setSearch(e.target.value);}} placeholder={type==="ride"?"e.g. Space Mountain":type==="show"?"e.g. Festival of the Lion King":type==="meal"?"e.g. Be Our Guest":"e.g. Rest break"} style={inputStyle} />
-          {suggestions.length > 0 && (
-            <div style={{ position:"absolute",top:"100%",left:0,right:0,background:T.surface,borderRadius:10,border:`1px solid ${T.border}`,boxShadow:"0 4px 16px rgba(0,0,0,0.15)",zIndex:10,maxHeight:200,overflow:"auto" }}>
-              {suggestions.map((s,i)=>(
-                <div key={i} onClick={()=>{setName(s.name);setParkId(s.parkId);setType(s.type);setSearch("");}} style={{ padding:"10px 14px",cursor:"pointer",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:8 }}>
-                  <span>{typeConfig[s.type]?.icon}</span>
-                  <div>
-                    <div style={{ color:T.text,fontSize:13,fontFamily:FONT }}>{s.name}</div>
-                    <div style={{ color:T.textMuted,fontSize:11,fontFamily:FONT }}>{s.parkId?.toUpperCase()}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Park */}
+        {/* Park selector — shown first so it filters the item dropdown */}
         <div style={{ marginBottom:12 }}>
-          <label style={{ color:T.textSub,fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:1,fontFamily:FONT,display:"block",marginBottom:6 }}>Park</label>
-          <select value={parkId} onChange={e=>setParkId(e.target.value)} style={{ ...inputStyle,cursor:"pointer" }}>
+          <label style={labelStyle}>Park</label>
+          <select value={parkId} onChange={e=>{ setParkId(e.target.value); setName(""); }} style={inputStyle}>
             <option value="">Any / Not specified</option>
             {["mk","ep","hs","ak"].map(pid=><option key={pid} value={pid}>{PARK_ICONS[pid]} {PARK_NAMES[pid]}</option>)}
           </select>
         </div>
 
-        {/* Best time suggestion */}
+        {/* Item name — dropdown for ride/show/meal, free text for break/other */}
+        <div style={{ marginBottom:12 }}>
+          <label style={labelStyle}>
+            {type === "ride" ? "Ride" : type === "show" ? "Show" : type === "meal" ? "Restaurant" : "Name"}
+          </label>
+
+          {usesDropdown ? (
+            <select
+              value={name}
+              onChange={e=>setName(e.target.value)}
+              style={inputStyle}
+              disabled={!parkId}
+            >
+              <option value="">
+                {!parkId
+                  ? "← Select a park first"
+                  : dropdownItems.length === 0
+                    ? "None available"
+                    : `Choose a ${type}…`}
+              </option>
+              {dropdownItems.map(item => (
+                <option key={item} value={item}>{item}</option>
+              ))}
+            </select>
+          ) : (
+            <input
+              value={name}
+              onChange={e=>setName(e.target.value)}
+              placeholder={type === "break" ? "e.g. Lunch break, Rest" : "e.g. Resort check-in, Character meet"}
+              style={{ ...inputStyle, cursor:"text" }}
+            />
+          )}
+
+          {usesDropdown && !parkId && (
+            <div style={{ color:T.textMuted, fontSize:11, fontFamily:FONT, marginTop:5 }}>
+              Select a park above to see available {type}s
+            </div>
+          )}
+        </div>
+
+        {/* Best time suggestion (when launched from a ride card) */}
         {bestTimeSuggestion && (
           <div style={{ marginBottom:14, background:dark?"#052e16":"#dcfce7", borderRadius:12, padding:"12px 14px", border:`1px solid ${dark?"#166534":"#86efac"}` }}>
             <div style={{ color:dark?"#4ade80":"#15803d", fontWeight:700, fontSize:12, fontFamily:FONT, marginBottom:8 }}>
@@ -337,23 +362,23 @@ function AddItemModal({ T, dark, accent, accentLight, typeConfig, parks, prefill
           </div>
         )}
 
-        {/* Time */}
+        {/* Time + Duration */}
         <div style={{ display:"flex",gap:10,marginBottom:12 }}>
           <div style={{ flex:1 }}>
-            <label style={{ color:T.textSub,fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:1,fontFamily:FONT,display:"block",marginBottom:6 }}>Time</label>
-            <select value={hour} onChange={e=>setHour(Number(e.target.value))} style={{ ...inputStyle,cursor:"pointer" }}>
+            <label style={labelStyle}>Time</label>
+            <select value={hour} onChange={e=>setHour(Number(e.target.value))} style={inputStyle}>
               {HOURS.map(h=><option key={h.value} value={h.value}>{h.label}</option>)}
             </select>
           </div>
           <div style={{ flex:1 }}>
-            <label style={{ color:T.textSub,fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:1,fontFamily:FONT,display:"block",marginBottom:6 }}>Minutes</label>
-            <select value={minute} onChange={e=>setMinute(Number(e.target.value))} style={{ ...inputStyle,cursor:"pointer" }}>
+            <label style={labelStyle}>Minutes</label>
+            <select value={minute} onChange={e=>setMinute(Number(e.target.value))} style={inputStyle}>
               {[0,15,30,45].map(m=><option key={m} value={m}>:{String(m).padStart(2,"0")}</option>)}
             </select>
           </div>
           <div style={{ flex:1 }}>
-            <label style={{ color:T.textSub,fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:1,fontFamily:FONT,display:"block",marginBottom:6 }}>Duration</label>
-            <select value={duration} onChange={e=>setDuration(Number(e.target.value))} style={{ ...inputStyle,cursor:"pointer" }}>
+            <label style={labelStyle}>Duration</label>
+            <select value={duration} onChange={e=>setDuration(Number(e.target.value))} style={inputStyle}>
               {[15,30,45,60,90,120].map(d=><option key={d} value={d}>{d} min</option>)}
             </select>
           </div>
@@ -361,8 +386,8 @@ function AddItemModal({ T, dark, accent, accentLight, typeConfig, parks, prefill
 
         {/* Note */}
         <div style={{ marginBottom:20 }}>
-          <label style={{ color:T.textSub,fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:1,fontFamily:FONT,display:"block",marginBottom:6 }}>Note (optional)</label>
-          <input value={note} onChange={e=>setNote(e.target.value)} placeholder="e.g. Meet at entrance, grab Lightning Lane" style={inputStyle} />
+          <label style={labelStyle}>Note (optional)</label>
+          <input value={note} onChange={e=>setNote(e.target.value)} placeholder="e.g. Meet at entrance, grab Lightning Lane" style={{ ...inputStyle, cursor:"text" }} />
         </div>
 
         <button onClick={handleSubmit} disabled={!name.trim()} style={{ width:"100%",padding:13,borderRadius:14,border:"none",background:name.trim()?accent:"#9ca3af",color:"#fff",fontFamily:FONT,fontWeight:700,fontSize:15,cursor:name.trim()?"pointer":"default" }}>
