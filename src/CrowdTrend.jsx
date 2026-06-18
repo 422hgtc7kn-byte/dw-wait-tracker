@@ -7,29 +7,58 @@ const DAYS_FULL  = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday",
 const PARK_OPEN  = 9;
 const HOUR_LABELS = ["9am","10am","11am","12pm","1pm","2pm","3pm","4pm","5pm","6pm","7pm","8pm","9pm","10pm"];
 
+// ── Typical park-wide avg wait by hour (9am–10pm), per park ──────────────────
+// Calibrated to real Disney World data: MK/HS run hotter, AK cools fast at night.
+// These represent an average crowd day (not peak holiday, not dead season).
 const TYPICAL_HOURLY = {
-  mk: [18,32,48,58,62,60,54,48,42,36,30,24,18,12],
-  ep: [14,24,38,48,52,50,46,40,34,28,22,18,12,8],
-  hs: [20,36,52,62,65,63,56,50,44,36,28,22,15,10],
-  ak: [16,28,42,50,52,48,40,32,24,18,12,8,5,4],
+  mk: [12, 22, 38, 55, 68, 72, 66, 58, 50, 42, 34, 25, 16, 10],
+  ep: [10, 18, 30, 44, 55, 58, 52, 44, 36, 28, 20, 14,  9,  6],
+  hs: [14, 28, 46, 62, 72, 74, 67, 58, 48, 38, 28, 20, 13,  8],
+  ak: [12, 24, 40, 54, 62, 60, 48, 36, 24, 16,  9,  6,  4,  3],
 };
 
+// ── Typical avg wait by day-of-week, per park ─────────────────────────────────
+// Sat/Sun run highest; Tue/Wed lowest. MK always busier than AK.
 const TYPICAL_DOW = {
-  mk: [42,52,36,34,38,44,56],
-  ep: [34,44,30,28,32,38,48],
-  hs: [46,54,38,36,40,46,58],
-  ak: [32,40,26,24,28,34,44],
+  //       Sun  Mon  Tue  Wed  Thu  Fri  Sat
+  mk: [    60,  48,  36,  34,  40,  50,  64 ],
+  ep: [    50,  38,  28,  26,  32,  42,  54 ],
+  hs: [    62,  50,  38,  36,  44,  54,  68 ],
+  ak: [    44,  34,  24,  22,  28,  38,  48 ],
 };
 
-// Crowd level thresholds (avg wait minutes)
-const LEVELS = [
-  { label:"Low",      max:20,  icon:"🟢", bg:{ l:["#dcfce7","#15803d"], d:["#052e16","#4ade80"] } },
-  { label:"Moderate", max:35,  icon:"🟡", bg:{ l:["#fef9c3","#854d0e"], d:["#422006","#fbbf24"] } },
-  { label:"High",     max:50,  icon:"🟠", bg:{ l:["#ffedd5","#9a3412"], d:["#431407","#fb923c"] } },
-  { label:"Peak",     max:9999,icon:"🔴", bg:{ l:["#fee2e2","#991b1b"], d:["#3b0a0a","#f87171"] } },
+// ── 5-tier crowd level system ─────────────────────────────────────────────────
+// Thresholds are avg standby wait minutes across operating attractions.
+// Disney parks rarely dip below 15m (rope drop) and regularly hit 55m+ on busy days.
+export const LEVELS = [
+  {
+    label: "Very Low", max: 18, icon: "🟢",
+    tip: "Exceptional day — walk on most rides",
+    bg: { l: ["#dcfce7","#14532d"], d: ["#052e16","#4ade80"] },
+  },
+  {
+    label: "Low",      max: 30, icon: "🟩",
+    tip: "Short queues — great time to visit",
+    bg: { l: ["#bbf7d0","#166534"], d: ["#064e3b","#34d399"] },
+  },
+  {
+    label: "Moderate", max: 45, icon: "🟡",
+    tip: "Typical crowds — plan strategically",
+    bg: { l: ["#fef9c3","#854d0e"], d: ["#422006","#fbbf24"] },
+  },
+  {
+    label: "High",     max: 60, icon: "🟠",
+    tip: "Busy day — use Lightning Lane",
+    bg: { l: ["#ffedd5","#9a3412"], d: ["#431407","#fb923c"] },
+  },
+  {
+    label: "Peak",     max: 9999, icon: "🔴",
+    tip: "Very busy — arrive at rope drop",
+    bg: { l: ["#fee2e2","#991b1b"], d: ["#3b0a0a","#f87171"] },
+  },
 ];
 
-function getLevel(avg) {
+export function getLevel(avg) {
   return LEVELS.find(l => avg < l.max) || LEVELS[LEVELS.length - 1];
 }
 function crowdColor(avg, dark) {
@@ -49,7 +78,6 @@ async function fetchCrowdData(parkId) {
   } catch { return null; }
 }
 
-// Compute per-DOW avg wait from historical data
 function dowAvgFromData(data, parkId, dow) {
   const typicalDow = TYPICAL_DOW[parkId] || TYPICAL_DOW.mk;
   const hours = data?.dowHourlyAvg?.[dow];
@@ -59,7 +87,6 @@ function dowAvgFromData(data, parkId, dow) {
   if (parkHours.length >= 3) {
     return { value: Math.round(parkHours.reduce((s,v)=>s+v,0)/parkHours.length), isReal: true, readings: parkHours.length };
   }
-  // Blend real + typical if we have some data but not much
   if (parkHours.length > 0) {
     const realAvg = parkHours.reduce((s,v)=>s+v,0)/parkHours.length;
     const blended = Math.round(realAvg * 0.6 + typicalDow[dow] * 0.4);
@@ -68,9 +95,8 @@ function dowAvgFromData(data, parkId, dow) {
   return { value: typicalDow[dow], isReal: false, readings: 0 };
 }
 
-// ── Forecast view — next 7 days ───────────────────────────────────────────────
+// ── Forecast view ─────────────────────────────────────────────────────────────
 function ForecastView({ data, parkId, todayDow, T, dark, accent, accentLight, accentDark }) {
-  // Build forecast for next 7 days starting today
   const forecast = Array.from({ length: 7 }, (_, i) => {
     const dow     = (todayDow + i) % 7;
     const result  = dowAvgFromData(data, parkId, dow);
@@ -92,9 +118,11 @@ function ForecastView({ data, parkId, todayDow, T, dark, accent, accentLight, ac
     high:   { label:"Based on your real data",   color: dark ? "#4ade80" : "#15803d" },
   }[confidence];
 
+  // Scale bar max to the actual range so differences are visible
+  const maxVal = Math.max(...forecast.map(f => f.value));
+
   return (
     <>
-      {/* Confidence badge */}
       <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:14, padding:"8px 12px", borderRadius:10, background: T.bg, border:`1px solid ${T.border}` }}>
         <div style={{ width:8, height:8, borderRadius:"50%", background: confidenceInfo.color, flexShrink:0 }} />
         <span style={{ color:confidenceInfo.color, fontSize:11, fontFamily:FONT, fontWeight:600 }}>{confidenceInfo.label}</span>
@@ -103,7 +131,6 @@ function ForecastView({ data, parkId, todayDow, T, dark, accent, accentLight, ac
         )}
       </div>
 
-      {/* 7-day forecast cards */}
       <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:14 }}>
         {forecast.map((day, i) => {
           const isToday   = i === 0;
@@ -111,6 +138,7 @@ function ForecastView({ data, parkId, todayDow, T, dark, accent, accentLight, ac
           const isWorst   = day.dow === worstDay.dow && i === forecast.indexOf(worstDay);
           const bg        = crowdBg(day.value, dark);
           const color     = crowdColor(day.value, dark);
+          const barPct    = Math.round((day.value / maxVal) * 100);
 
           return (
             <div key={i} style={{
@@ -118,9 +146,7 @@ function ForecastView({ data, parkId, todayDow, T, dark, accent, accentLight, ac
               padding:"12px 14px", borderRadius:12,
               background: isToday ? bg : T.bg,
               border: isToday ? `1.5px solid ${color}` : `1px solid ${T.border}`,
-              transition:"all 0.2s",
             }}>
-              {/* Day + date */}
               <div style={{ minWidth:52 }}>
                 <div style={{ color: isToday ? color : T.text, fontWeight: isToday ? 800 : 600, fontSize:14, fontFamily:FONT }}>
                   {isToday ? "Today" : DAYS_SHORT[day.dow]}
@@ -128,33 +154,30 @@ function ForecastView({ data, parkId, todayDow, T, dark, accent, accentLight, ac
                 <div style={{ color:T.textMuted, fontSize:10, fontFamily:FONT }}>{day.dateStr}</div>
               </div>
 
-              {/* Bar */}
-              <div style={{ flex:1, height:8, borderRadius:4, background: dark?"rgba(255,255,255,0.08)":"rgba(0,0,0,0.06)", overflow:"hidden" }}>
-                <div style={{
-                  width:`${Math.min(100, Math.round((day.value / 65) * 100))}%`,
-                  height:"100%",
-                  background: crowdColor(day.value, dark),
-                  borderRadius:4,
-                  opacity: day.isReal ? 1 : 0.55,
-                  transition:"width 0.6s ease",
-                }} />
+              <div style={{ flex:1 }}>
+                <div style={{ height:8, borderRadius:4, background: dark?"rgba(255,255,255,0.08)":"rgba(0,0,0,0.06)", overflow:"hidden" }}>
+                  <div style={{
+                    width:`${barPct}%`, height:"100%",
+                    background: crowdColor(day.value, dark),
+                    borderRadius:4, opacity: day.isReal ? 1 : 0.55,
+                    transition:"width 0.6s ease",
+                  }} />
+                </div>
+                <div style={{ color:T.textMuted, fontSize:10, fontFamily:FONT, marginTop:3 }}>
+                  ~{day.value}m avg wait
+                </div>
               </div>
 
-              {/* Level badge */}
-              <div style={{
-                minWidth:80, textAlign:"right",
-                display:"flex", alignItems:"center", justifyContent:"flex-end", gap:5,
-              }}>
+              <div style={{ minWidth:90, textAlign:"right", display:"flex", alignItems:"center", justifyContent:"flex-end", gap:5 }}>
                 {(isBest || isWorst) && (
                   <span style={{ fontSize:11 }}>{isBest ? "⭐" : "⚠️"}</span>
                 )}
                 <span style={{
-                  background: bg,
-                  color,
+                  background: bg, color,
                   borderRadius:20, padding:"3px 10px",
                   fontSize:11, fontWeight:700, fontFamily:FONT,
                   border:`1px solid ${color}44`,
-                  opacity: day.isReal ? 1 : 0.8,
+                  opacity: day.isReal ? 1 : 0.85,
                 }}>
                   {day.level.icon} {day.level.label}
                 </span>
@@ -164,21 +187,16 @@ function ForecastView({ data, parkId, todayDow, T, dark, accent, accentLight, ac
         })}
       </div>
 
-      {/* Best / worst callout */}
       <div style={{ display:"flex", gap:8 }}>
         <div style={{ flex:1, padding:"10px 12px", borderRadius:12, background:dark?"#052e16":"#dcfce7", border:`1px solid ${dark?"#166534":"#86efac"}` }}>
-          <div style={{ color:dark?"#4ade80":"#15803d", fontWeight:700, fontSize:12, fontFamily:FONT, marginBottom:2 }}>
-            ⭐ Best day
-          </div>
+          <div style={{ color:dark?"#4ade80":"#15803d", fontWeight:700, fontSize:12, fontFamily:FONT, marginBottom:2 }}>⭐ Best day</div>
           <div style={{ color:dark?"#86efac":"#166534", fontWeight:800, fontSize:15, fontFamily:FONT }}>{bestDay.i===0?"Today":DAYS_FULL[bestDay.dow]}</div>
-          <div style={{ color:dark?"#4ade80":"#15803d", fontSize:11, fontFamily:FONT }}>~{bestDay.value}m avg wait</div>
+          <div style={{ color:dark?"#4ade80":"#15803d", fontSize:11, fontFamily:FONT }}>~{bestDay.value}m avg · {bestDay.level.label}</div>
         </div>
         <div style={{ flex:1, padding:"10px 12px", borderRadius:12, background:dark?"#3b0a0a":"#fee2e2", border:`1px solid ${dark?"#7f1d1d":"#fecaca"}` }}>
-          <div style={{ color:dark?"#f87171":"#991b1b", fontWeight:700, fontSize:12, fontFamily:FONT, marginBottom:2 }}>
-            ⚠️ Busiest day
-          </div>
+          <div style={{ color:dark?"#f87171":"#991b1b", fontWeight:700, fontSize:12, fontFamily:FONT, marginBottom:2 }}>⚠️ Busiest day</div>
           <div style={{ color:dark?"#fca5a5":"#7f1d1d", fontWeight:800, fontSize:15, fontFamily:FONT }}>{worstDay.i===0?"Today":DAYS_FULL[worstDay.dow]}</div>
-          <div style={{ color:dark?"#f87171":"#991b1b", fontSize:11, fontFamily:FONT }}>~{worstDay.value}m avg wait</div>
+          <div style={{ color:dark?"#f87171":"#991b1b", fontSize:11, fontFamily:FONT }}>~{worstDay.value}m avg · {worstDay.level.label}</div>
         </div>
       </div>
 
@@ -220,7 +238,6 @@ function HourlyChart({ data, parkId, selectedDow, setSelectedDow, todayDow, T, d
 
   return (
     <>
-      {/* Day selector */}
       <div style={{ display:"flex", gap:4, marginBottom:10, overflowX:"auto" }}>
         {DAYS_SHORT.map((d, i) => {
           const hasDow     = data?.dowHourlyAvg?.[i]?.some(v => v != null);
@@ -296,7 +313,7 @@ function HourlyChart({ data, parkId, selectedDow, setSelectedDow, todayDow, T, d
   );
 }
 
-// ── Day-of-week comparison chart ──────────────────────────────────────────────
+// ── Day-of-week chart ─────────────────────────────────────────────────────────
 function DayChart({ data, parkId, todayDow, T, dark, accent, accentLight, accentDark }) {
   const dowAvgs = DAYS_SHORT.map((_, dow) => dowAvgFromData(data, parkId, dow));
   const W = 280, H = 100;
@@ -368,7 +385,7 @@ function DayChart({ data, parkId, todayDow, T, dark, accent, accentLight, accent
   );
 }
 
-// ── Main CrowdTrend component ─────────────────────────────────────────────────
+// ── Main CrowdTrend ───────────────────────────────────────────────────────────
 export default function CrowdTrend({ parkId, accent, accentLight, accentDark, T, dark }) {
   const [data, setData]           = useState(null);
   const [loading, setLoading]     = useState(true);
@@ -383,8 +400,7 @@ export default function CrowdTrend({ parkId, accent, accentLight, accentDark, T,
     fetchCrowdData(parkId).then(d => { setData(d); setLoading(false); });
   }, [parkId]);
 
-  // Compute today's crowd level for the collapsed summary
-  const todayData = dowAvgFromData(data, parkId, todayDow);
+  const todayData  = dowAvgFromData(data, parkId, todayDow);
   const todayLevel = getLevel(todayData.value);
   const todayColor = crowdColor(todayData.value, dark);
   const todayBg    = crowdBg(todayData.value, dark);
@@ -397,7 +413,6 @@ export default function CrowdTrend({ parkId, accent, accentLight, accentDark, T,
 
   return (
     <div style={{ background:T.surface, borderRadius:16, border:`1px solid ${T.border}`, marginBottom:14, overflow:"hidden" }}>
-      {/* Header row — always visible, tap to expand/collapse */}
       <div
         onClick={() => setExpanded(e => !e)}
         style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"14px 16px", cursor:"pointer" }}
@@ -405,25 +420,27 @@ export default function CrowdTrend({ parkId, accent, accentLight, accentDark, T,
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
           <span style={{ color:T.text, fontWeight:700, fontSize:14, fontFamily:FONT }}>📊 Crowd Forecast</span>
           {!loading && (
-            <span style={{
-              background: todayBg,
-              color: todayColor,
-              borderRadius:20, padding:"3px 10px",
-              fontSize:11, fontWeight:700, fontFamily:FONT,
-              border:`1px solid ${todayColor}44`,
-            }}>
-              {todayLevel.icon} Today: {todayLevel.label}
-            </span>
+            <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-start", gap:2 }}>
+              <span style={{
+                background: todayBg, color: todayColor,
+                borderRadius:20, padding:"3px 10px",
+                fontSize:11, fontWeight:700, fontFamily:FONT,
+                border:`1px solid ${todayColor}44`,
+              }}>
+                {todayLevel.icon} Today: {todayLevel.label}
+              </span>
+              <span style={{ color:T.textMuted, fontSize:10, fontFamily:FONT, paddingLeft:2 }}>
+                {todayLevel.tip}
+              </span>
+            </div>
           )}
           {loading && <span style={{ color:T.textMuted, fontSize:11, fontFamily:FONT }}>Loading…</span>}
         </div>
         <span style={{ color:T.textMuted, fontSize:16, lineHeight:1 }}>{expanded ? "▲" : "▼"}</span>
       </div>
 
-      {/* Expanded content */}
       {expanded && (
         <div style={{ padding:"0 16px 16px" }}>
-          {/* View toggle */}
           <div style={{ display:"flex", gap:4, marginBottom:14, background:T.bg, borderRadius:10, padding:3 }}>
             {VIEWS.map(v => (
               <button key={v.id} onClick={() => setView(v.id)} style={{
@@ -438,8 +455,8 @@ export default function CrowdTrend({ parkId, accent, accentLight, accentDark, T,
             ))}
           </div>
 
-          {/* Level legend */}
-          <div style={{ display:"flex", gap:8, marginBottom:14, flexWrap:"wrap" }}>
+          {/* 5-tier legend */}
+          <div style={{ display:"flex", gap:6, marginBottom:14, flexWrap:"wrap" }}>
             {LEVELS.map((l, i) => (
               <div key={i} style={{ display:"flex", alignItems:"center", gap:4 }}>
                 <span style={{ fontSize:10 }}>{l.icon}</span>

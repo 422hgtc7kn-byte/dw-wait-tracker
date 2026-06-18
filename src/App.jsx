@@ -568,24 +568,43 @@ function ShowCard({ show, accent, accentLight, accentDark, isFavorite, onToggleF
   );
 }
 
+// 5-tier crowd levels — thresholds match CrowdTrend.jsx
+const CROWD_LEVELS = [
+  { label:"Very Low", max:18,   icon:"🟢", tip:"Walk-on conditions",
+    l:["#dcfce7","#14532d","#22c55e"], d:["#052e16","#4ade80","#22c55e"] },
+  { label:"Low",      max:30,   icon:"🟩", tip:"Short queues",
+    l:["#bbf7d0","#166534","#4ade80"], d:["#064e3b","#34d399","#34d399"] },
+  { label:"Moderate", max:45,   icon:"🟡", tip:"Plan strategically",
+    l:["#fef9c3","#854d0e","#eab308"], d:["#422006","#fbbf24","#eab308"] },
+  { label:"High",     max:60,   icon:"🟠", tip:"Use Lightning Lane",
+    l:["#ffedd5","#9a3412","#f97316"], d:["#431407","#fb923c","#f97316"] },
+  { label:"Peak",     max:9999, icon:"🔴", tip:"Arrive at rope drop",
+    l:["#fee2e2","#991b1b","#ef4444"], d:["#3b0a0a","#f87171","#ef4444"] },
+];
+function getCrowdLevel(avg) {
+  return CROWD_LEVELS.find(l => avg < l.max) || CROWD_LEVELS[CROWD_LEVELS.length - 1];
+}
+
 function CrowdMeter({ rides, T, dark }) {
   const w = rides.filter(r=>r.status==="OPERATING"&&r.queue?.STANDBY?.waitTime!=null);
   if (!w.length) return null;
   const avg = w.reduce((s,r)=>s+r.queue.STANDBY.waitTime,0)/w.length;
-  const level = avg<20?"Low":avg<35?"Moderate":avg<55?"High":"Peak";
-  const [bg,fg,bar] = dark
-    ?(avg<20?["#052e16","#4ade80","#22c55e"]:avg<35?["#422006","#fbbf24","#eab308"]:avg<55?["#431407","#fb923c","#f97316"]:["#3b0a0a","#f87171","#ef4444"])
-    :(avg<20?["#dcfce7","#15803d","#22c55e"]:avg<35?["#fef9c3","#854d0e","#eab308"]:avg<55?["#ffedd5","#9a3412","#f97316"]:["#fee2e2","#991b1b","#ef4444"]);
+  const cl  = getCrowdLevel(avg);
+  const [bg, fg, bar] = dark ? cl.d : cl.l;
+  const barPct = Math.min(100, Math.round((avg / 65) * 100));
   return (
     <div style={{ ...cardStyle(T),padding:"14px 16px",marginBottom:14,background:bg,border:`1px solid ${bar}44` }}>
-      <div style={{ display:"flex",justifyContent:"space-between",marginBottom:8 }}>
+      <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6 }}>
         <span style={{ color:fg,fontSize:13,fontFamily:FONT,fontWeight:600 }}>Park Crowd Level</span>
-        <span style={{ color:fg,fontWeight:800,fontSize:13,fontFamily:FONT }}>{level}</span>
+        <span style={{ color:fg,fontWeight:800,fontSize:13,fontFamily:FONT }}>{cl.icon} {cl.label}</span>
       </div>
-      <div style={{ height:6,borderRadius:3,background:"rgba(0,0,0,0.1)",overflow:"hidden" }}>
-        <div style={{ width:`${Math.min(100,Math.round((avg/80)*100))}%`,height:"100%",background:bar,borderRadius:3,transition:"width 0.8s" }} />
+      <div style={{ height:6,borderRadius:3,background:"rgba(0,0,0,0.12)",overflow:"hidden",marginBottom:6 }}>
+        <div style={{ width:`${barPct}%`,height:"100%",background:bar,borderRadius:3,transition:"width 0.8s" }} />
       </div>
-      <div style={{ color:fg,fontSize:11,fontFamily:FONT,marginTop:6,opacity:0.7 }}>Avg standby: {Math.round(avg)} min · {w.length} rides reporting</div>
+      <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center" }}>
+        <span style={{ color:fg,fontSize:11,fontFamily:FONT,opacity:0.75 }}>Avg standby: {Math.round(avg)} min · {w.length} rides reporting</span>
+        <span style={{ color:fg,fontSize:11,fontFamily:FONT,fontWeight:600,opacity:0.85 }}>{cl.tip}</span>
+      </div>
     </div>
   );
 }
