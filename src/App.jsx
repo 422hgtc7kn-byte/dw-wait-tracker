@@ -659,6 +659,7 @@ export default function App() {
   const [filter, setFilter]         = useState("all");
   const [heightFilter, setHeightFilter] = useState("all");
   const [a11yFilter, setA11yFilter]     = useState("all");
+  const [listCollapsed, setListCollapsed] = useState(false);
   // sortBy: "wait_asc" | "wait_desc" | "name_asc" | "name_desc"
   const [sortBy, setSortBy]         = useState("wait_asc");
   const [alertModal, setAlertModal] = useState(null);
@@ -972,19 +973,13 @@ export default function App() {
         {!isDesktop && (
           <div style={{ display:"flex",gap:6,overflowX:"auto",paddingBottom:2,marginBottom:14 }}>
             {Object.entries(PARKS).map(([id,p]) => (
-              <button key={id} onClick={()=>setActivePark(id)} style={{ background:activePark===id?"rgba(255,255,255,0.25)":"rgba(255,255,255,0.1)",color:"#fff",border:activePark===id?"1.5px solid rgba(255,255,255,0.5)":"1px solid rgba(255,255,255,0.15)",borderRadius:20,padding:"5px 14px",fontSize:12,fontWeight:activePark===id?700:400,cursor:"pointer",whiteSpace:"nowrap",fontFamily:FONT }}>
+              <button key={id} onClick={()=>{ setActivePark(id); setListCollapsed(false); }} style={{ background:activePark===id?"rgba(255,255,255,0.25)":"rgba(255,255,255,0.1)",color:"#fff",border:activePark===id?"1.5px solid rgba(255,255,255,0.5)":"1px solid rgba(255,255,255,0.15)",borderRadius:20,padding:"5px 14px",fontSize:12,fontWeight:activePark===id?700:400,cursor:"pointer",whiteSpace:"nowrap",fontFamily:FONT }}>
                 {p.icon} {id.toUpperCase()}
               </button>
             ))}
           </div>
         )}
 
-        {/* Rides / Shows / Favorites tab */}
-        <div style={{ display:"flex",gap:6,background:"rgba(0,0,0,0.2)",borderRadius:12,padding:4 }}>
-          {[{id:"rides",label:"🎢 Rides"},{id:"shows",label:"🎭 Shows"},{id:"favorites",label:"⭐ Favs"}].map(t=>(
-            <button key={t.id} onClick={()=>setActiveTab(t.id)} style={{ flex:1,padding:"8px 0",borderRadius:9,border:"none",background:activeTab===t.id?"#fff":"transparent",color:activeTab===t.id?(greggyMode?"#1a5200":park.color):"rgba(255,255,255,0.6)",fontFamily:FONT,fontWeight:activeTab===t.id?700:500,fontSize:12,cursor:"pointer",transition:"all 0.2s",boxShadow:activeTab===t.id?"0 1px 4px rgba(0,0,0,0.2)":"none" }}>{t.label}</button>
-          ))}
-        </div>
       </div>
 
       {/* Desktop: flex row with sidebar + content. Mobile: just content */}
@@ -995,7 +990,7 @@ export default function App() {
           <div style={{ width:220, flexShrink:0, padding:"24px 12px 0 20px", borderRight:`1px solid ${T.border}`, position:"sticky", top:0, height:"100vh", overflowY:"auto" }}>
             <div style={{ color:T.textSub, fontSize:11, fontFamily:FONT, fontWeight:600, textTransform:"uppercase", letterSpacing:1, marginBottom:12 }}>Parks</div>
             {Object.entries(PARKS).map(([id,p]) => (
-              <button key={id} onClick={()=>setActivePark(id)} style={{
+              <button key={id} onClick={()=>{ setActivePark(id); setListCollapsed(false); }} style={{
                 display:"flex", alignItems:"center", gap:10, width:"100%",
                 padding:"11px 14px", borderRadius:12, border:"none", marginBottom:6,
                 background: activePark===id ? (greggyMode?GREGGY_PARK.accentLight:park.accentLight) : T.bg,
@@ -1020,44 +1015,71 @@ export default function App() {
             {!loading && rideEntities.length>0 && (
               <>
                 <CrowdMeter rides={rideEntities} T={T} dark={dark} />
-                <CrowdTrend parkId={activePark} accent={park.accent} accentLight={park.accentLight} accentDark={park.accentDark} T={T} dark={dark} />
                 <div style={{ display:"flex",gap:10,marginBottom:14 }}>
                   <StatPill icon="⏱" value={avgWait!=null?`${avgWait}m`:"—"} label="Avg Wait" T={T} />
                   <StatPill icon="🎢" value={openRides.length} label="Open" T={T} />
                   <StatPill icon="✨" value={shortestRide?`${shortestRide.queue.STANDBY.waitTime}m`:"—"} label="Shortest" T={T} />
                 </div>
-                <div style={{ display:"flex",gap:6,marginBottom:10,overflowX:"auto",paddingBottom:2 }}>
-                  {[{id:"all",label:"All"},{id:"favorites",label:"⭐ Favs"},{id:"high",label:"🔥 Thrill"},{id:"medium",label:"⚡ Moderate"},{id:"low",label:"🌿 Mild"}].map(f=>(
-                    <FilterBtn key={f.id} active={filter===f.id} onClick={()=>setFilter(f.id)} accent={park.accent} T={T}>{f.label}</FilterBtn>
-                  ))}
-                </div>
 
-                {/* Height + Accessibility dropdowns */}
-                <div style={{ display:"flex", gap:8, marginBottom:10 }}>
-                  <select value={heightFilter} onChange={e=>setHeightFilter(e.target.value)} style={{ flex:1, background:T.surface, color:T.textSub, border:`1px solid ${T.border}`, borderRadius:10, padding:"7px 10px", fontSize:12, fontFamily:FONT, cursor:"pointer" }}>
-                    <option value="all">📏 Any height</option>
-                    <option value="any">📏 No requirement</option>
-                    <option value="under40">📏 Under 40"</option>
-                    <option value="under44">📏 Under 44"</option>
-                    <option value="under48">📏 Under 48"</option>
-                  </select>
-                  <select value={a11yFilter} onChange={e=>setA11yFilter(e.target.value)} style={{ flex:1, background:T.surface, color:T.textSub, border:`1px solid ${T.border}`, borderRadius:10, padding:"7px 10px", fontSize:12, fontFamily:FONT, cursor:"pointer" }}>
-                    <option value="all">♿ All rides</option>
-                    <option value="wheelchair">♿ Stay in wheelchair</option>
-                    <option value="transfer">♿ No transfer req.</option>
-                    <option value="no_loose">♿ Loose articles OK</option>
-                    <option value="ambulatory">♿ No walking req.</option>
-                  </select>
-                </div>
-                <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14 }}>
-                  {hiddenCount>0 ? (
-                    <button onClick={()=>setHidden({})} style={{ background:T.surface,color:T.textSub,border:`1px solid ${T.border}`,borderRadius:20,padding:"5px 14px",fontSize:12,cursor:"pointer",fontFamily:FONT }}>Unhide all ({hiddenCount})</button>
-                  ) : <div />}
-                  {/* Sort cycle button */}
-                  <button onClick={cycleSortBy} style={{ background:T.surface,color:T.textSub,border:`1px solid ${T.border}`,borderRadius:10,padding:"6px 14px",fontSize:12,fontFamily:FONT,cursor:"pointer",fontWeight:600 }}>
-                    {SORT_LABELS[sortBy]}
-                  </button>
-                </div>
+                {/* Collapse toggle */}
+                <button
+                  onClick={()=>setListCollapsed(c=>!c)}
+                  style={{ display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:"10px 14px",marginBottom:listCollapsed?0:12,cursor:"pointer",fontFamily:FONT }}
+                >
+                  <div style={{ display:"flex",gap:6 }}>
+                    {[{id:"rides",label:"🎢 Rides"},{id:"shows",label:"🎭 Shows"},{id:"favorites",label:"⭐ Favs"}].map(t=>(
+                      <span
+                        key={t.id}
+                        onClick={e=>{ e.stopPropagation(); setActiveTab(t.id); setListCollapsed(false); }}
+                        style={{
+                          padding:"4px 12px",borderRadius:20,fontSize:12,fontWeight:activeTab===t.id?700:400,
+                          background:activeTab===t.id?park.accent:"transparent",
+                          color:activeTab===t.id?"#fff":T.textSub,
+                          border:`1px solid ${activeTab===t.id?park.accent:T.border}`,
+                          cursor:"pointer",
+                        }}
+                      >{t.label}</span>
+                    ))}
+                  </div>
+                  <span style={{ color:T.textMuted,fontSize:13 }}>{listCollapsed?"▼ Show":"▲ Hide"}</span>
+                </button>
+
+                {!listCollapsed && (
+                  <>
+                    <CrowdTrend parkId={activePark} accent={park.accent} accentLight={park.accentLight} accentDark={park.accentDark} T={T} dark={dark} />
+                    <div style={{ display:"flex",gap:6,marginBottom:10,overflowX:"auto",paddingBottom:2 }}>
+                      {[{id:"all",label:"All"},{id:"favorites",label:"⭐ Favs"},{id:"high",label:"🔥 Thrill"},{id:"medium",label:"⚡ Moderate"},{id:"low",label:"🌿 Mild"}].map(f=>(
+                        <FilterBtn key={f.id} active={filter===f.id} onClick={()=>setFilter(f.id)} accent={park.accent} T={T}>{f.label}</FilterBtn>
+                      ))}
+                    </div>
+
+                    {/* Height + Accessibility dropdowns */}
+                    <div style={{ display:"flex", gap:8, marginBottom:10 }}>
+                      <select value={heightFilter} onChange={e=>setHeightFilter(e.target.value)} style={{ flex:1, background:T.surface, color:T.textSub, border:`1px solid ${T.border}`, borderRadius:10, padding:"7px 10px", fontSize:12, fontFamily:FONT, cursor:"pointer" }}>
+                        <option value="all">📏 Any height</option>
+                        <option value="any">📏 No requirement</option>
+                        <option value="under40">📏 Under 40"</option>
+                        <option value="under44">📏 Under 44"</option>
+                        <option value="under48">📏 Under 48"</option>
+                      </select>
+                      <select value={a11yFilter} onChange={e=>setA11yFilter(e.target.value)} style={{ flex:1, background:T.surface, color:T.textSub, border:`1px solid ${T.border}`, borderRadius:10, padding:"7px 10px", fontSize:12, fontFamily:FONT, cursor:"pointer" }}>
+                        <option value="all">♿ All rides</option>
+                        <option value="wheelchair">♿ Stay in wheelchair</option>
+                        <option value="transfer">♿ No transfer req.</option>
+                        <option value="no_loose">♿ Loose articles OK</option>
+                        <option value="ambulatory">♿ No walking req.</option>
+                      </select>
+                    </div>
+                    <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14 }}>
+                      {hiddenCount>0 ? (
+                        <button onClick={()=>setHidden({})} style={{ background:T.surface,color:T.textSub,border:`1px solid ${T.border}`,borderRadius:20,padding:"5px 14px",fontSize:12,cursor:"pointer",fontFamily:FONT }}>Unhide all ({hiddenCount})</button>
+                      ) : <div />}
+                      <button onClick={cycleSortBy} style={{ background:T.surface,color:T.textSub,border:`1px solid ${T.border}`,borderRadius:10,padding:"6px 14px",fontSize:12,fontFamily:FONT,cursor:"pointer",fontWeight:600 }}>
+                        {SORT_LABELS[sortBy]}
+                      </button>
+                    </div>
+                  </>
+                )}
               </>
             )}
 
@@ -1070,7 +1092,7 @@ export default function App() {
               </div>
             )}
 
-            {!loading && filteredRides.length>0 && (
+            {!listCollapsed && !loading && filteredRides.length>0 && (
               <>
                 <div style={{ color:T.textMuted,fontSize:11,fontFamily:FONT,marginBottom:10,textTransform:"uppercase",letterSpacing:1,fontWeight:600 }}>
                   {filteredRides.length} attractions · tap for trend chart
@@ -1087,7 +1109,7 @@ export default function App() {
               </>
             )}
 
-            {!loading && filter==="favorites" && filteredRides.length===0 && (
+            {!listCollapsed && !loading && filter==="favorites" && filteredRides.length===0 && (
               <div style={{ textAlign:"center",padding:"32px 20px",color:T.textMuted,fontFamily:FONT,fontSize:13 }}>
                 <div style={{ fontSize:32,marginBottom:10 }}>☆</div>
                 Tap ☆ on any ride to add it to favorites
@@ -1106,11 +1128,36 @@ export default function App() {
                   <StatPill icon="🕐" value={showEntities.filter(s=>(s.showtimes||[]).length>0).length} label="With Times" T={T} />
                   <StatPill icon="▶️" value={showEntities.filter(s=>(s.showtimes||[]).some(st=>isUpcoming(st.startTime))).length} label="Upcoming" T={T} />
                 </div>
-                <div style={{ display:"flex",gap:6,marginBottom:14 }}>
-                  {[{id:"all",label:"All"},{id:"favorites",label:"⭐ Favs"}].map(f=>(
-                    <FilterBtn key={f.id} active={filter===f.id} onClick={()=>setFilter(f.id)} accent={park.accent} T={T}>{f.label}</FilterBtn>
-                  ))}
-                </div>
+
+                <button
+                  onClick={()=>setListCollapsed(c=>!c)}
+                  style={{ display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:"10px 14px",marginBottom:listCollapsed?0:12,cursor:"pointer",fontFamily:FONT }}
+                >
+                  <div style={{ display:"flex",gap:6 }}>
+                    {[{id:"rides",label:"🎢 Rides"},{id:"shows",label:"🎭 Shows"},{id:"favorites",label:"⭐ Favs"}].map(t=>(
+                      <span
+                        key={t.id}
+                        onClick={e=>{ e.stopPropagation(); setActiveTab(t.id); setListCollapsed(false); }}
+                        style={{
+                          padding:"4px 12px",borderRadius:20,fontSize:12,fontWeight:activeTab===t.id?700:400,
+                          background:activeTab===t.id?park.accent:"transparent",
+                          color:activeTab===t.id?"#fff":T.textSub,
+                          border:`1px solid ${activeTab===t.id?park.accent:T.border}`,
+                          cursor:"pointer",
+                        }}
+                      >{t.label}</span>
+                    ))}
+                  </div>
+                  <span style={{ color:T.textMuted,fontSize:13 }}>{listCollapsed?"▼ Show":"▲ Hide"}</span>
+                </button>
+
+                {!listCollapsed && (
+                  <div style={{ display:"flex",gap:6,marginBottom:14 }}>
+                    {[{id:"all",label:"All"},{id:"favorites",label:"⭐ Favs"}].map(f=>(
+                      <FilterBtn key={f.id} active={filter===f.id} onClick={()=>setFilter(f.id)} accent={park.accent} T={T}>{f.label}</FilterBtn>
+                    ))}
+                  </div>
+                )}
               </>
             )}
             {loading && Array.from({length:5}).map((_,i)=><SkeletonCard key={i} T={T} />)}
@@ -1120,7 +1167,7 @@ export default function App() {
                 <div>Tap ↻ to load show schedules</div>
               </div>
             )}
-            {!loading && filteredShows.length>0 && (
+            {!listCollapsed && !loading && filteredShows.length>0 && (
               <>
                 <div style={{ color:T.textMuted,fontSize:11,fontFamily:FONT,marginBottom:10,textTransform:"uppercase",letterSpacing:1,fontWeight:600 }}>
                   {filteredShows.length} shows · tap for full schedule
