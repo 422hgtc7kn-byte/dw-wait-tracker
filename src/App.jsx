@@ -374,11 +374,63 @@ function NoteModal({ ride, existingNote, onSave, onClose, accent, T }) {
   );
 }
 
+// ── Line Timer helpers ─────────────────────────────────────────────────────────
+function loadLineHistory() {
+  try { return JSON.parse(localStorage.getItem("dwt_line_history") || "{}"); } catch { return {}; }
+}
+function saveLineHistory(h) {
+  try { localStorage.setItem("dwt_line_history", JSON.stringify(h)); } catch {}
+}
+
 // ── RideCard ──────────────────────────────────────────────────────────────────
 function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleFavorite, alertThreshold, onSetAlert, isHidden, onToggleHidden, note, onOpenNoteModal, onAddToPlan, T, dark }) {
   const [expanded, setExpanded] = useState(false);
   const [trendData, setTrendData] = useState(null);
   const [trendLoading, setTrendLoading] = useState(false);
+
+  // Line timer state
+  const [timerStart, setTimerStart]   = useState(null);   // Date when timer started
+  const [elapsed, setElapsed]         = useState(0);       // seconds
+  const [lineHistory, setLineHistory] = useState(() => loadLineHistory());
+  const timerRef = useRef(null);
+  const myHistory = lineHistory[ride.id] || [];
+
+  // Tick every second while running
+  useEffect(() => {
+    if (timerStart) {
+      timerRef.current = setInterval(() => {
+        setElapsed(Math.floor((Date.now() - timerStart) / 1000));
+      }, 1000);
+    } else {
+      clearInterval(timerRef.current);
+    }
+    return () => clearInterval(timerRef.current);
+  }, [timerStart]);
+
+  function startTimer() { setTimerStart(Date.now()); setElapsed(0); }
+
+  function stopTimer() {
+    if (!timerStart) return;
+    const mins = Math.round(elapsed / 60);
+    const entry = { ts: Date.now(), mins, posted: ride.queue?.STANDBY?.waitTime ?? null };
+    const updated = { ...lineHistory, [ride.id]: [entry, ...myHistory].slice(0, 10) };
+    setLineHistory(updated);
+    saveLineHistory(updated);
+    setTimerStart(null);
+    setElapsed(0);
+  }
+
+  function clearHistory() {
+    const updated = { ...lineHistory };
+    delete updated[ride.id];
+    setLineHistory(updated);
+    saveLineHistory(updated);
+  }
+
+  function fmtElapsed(s) {
+    const m = Math.floor(s / 60), sec = s % 60;
+    return `${m}:${String(sec).padStart(2, "0")}`;
+  }
   const thrill = inferThrill(ride.name);
   const details = getRideDetails(ride.name);
   const isOperating = ride.status === "OPERATING";
@@ -440,6 +492,31 @@ function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleF
           </div>
         </div>
       </div>
+
+      {/* Line timer button — prominent, always on card face */}
+      {isOperating && (
+        <div style={{ marginTop:10 }}>
+          {timerStart ? (
+            <div style={{ display:"flex",alignItems:"center",gap:8,padding:"10px 14px",borderRadius:12,background:dark?"#3b0a0a":"#fee2e2",border:`1.5px solid ${dark?"#ef4444":"#fca5a5"}` }}>
+              <div style={{ flex:1 }}>
+                <div style={{ color:dark?"#f87171":"#dc2626",fontSize:20,fontWeight:800,fontFamily:FONT,letterSpacing:1 }}>{fmtElapsed(elapsed)}</div>
+                <div style={{ color:dark?"#fca5a5":"#9f1239",fontSize:11,fontFamily:FONT }}>⏱ In line now…</div>
+              </div>
+              <button
+                onClick={e=>{e.stopPropagation();stopTimer();}}
+                style={{ background:dark?"#dc2626":"#dc2626",border:"none",borderRadius:10,padding:"8px 18px",color:"#fff",fontFamily:FONT,fontWeight:700,fontSize:13,cursor:"pointer",flexShrink:0 }}>
+                ✓ Done
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={e=>{e.stopPropagation();startTimer();}}
+              style={{ width:"100%",padding:"8px 12px",borderRadius:12,border:`1.5px solid ${T.border}`,background:T.bg,color:T.textSub,fontFamily:FONT,fontWeight:600,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6 }}>
+              ⏱ Time my wait
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Best time NOW banner */}
       {isBestTime && (
@@ -518,6 +595,46 @@ function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleF
             )}
           </div>
           {ride.lastUpdated && <div style={{ color:T.textMuted,fontSize:10,fontFamily:FONT,marginTop:6 }}>Updated {new Date(ride.lastUpdated).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}</div>}
+
+          {/* Line timer history */}
+          {myHistory.length > 0 && (
+            <div style={{ marginTop:12, padding:"12px", borderRadius:12, background:T.bg, border:`1px solid ${T.border}` }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+                <span style={{ color:T.textSub, fontSize:12, fontFamily:FONT, fontWeight:700 }}>⏱ My Wait History</span>
+                <button onClick={clearHistory} style={{ background:"none", border:"none", color:T.textMuted, fontSize:11, fontFamily:FONT, cursor:"pointer" }}>Clear</button>
+              </div>
+              <div style={{ color:T.textMuted, fontSize:10, fontFamily:FONT, textTransform:"uppercase", letterSpacing:1, fontWeight:600, marginBottom:6 }}>Past waits</div>
+              <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
+                  {myHistory.map((h, i) => {
+                    const diff = h.posted != null ? h.mins - h.posted : null;
+                    return (
+                      <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"6px 10px", borderRadius:8, background:T.surface }}>
+                        <div>
+                          <span style={{ color:T.text, fontWeight:700, fontSize:13, fontFamily:FONT }}>{h.mins}m actual</span>
+                          {h.posted != null && (
+                            <span style={{ color:T.textMuted, fontSize:11, fontFamily:FONT, marginLeft:8 }}>
+                              (posted {h.posted}m
+                              {diff !== null && (
+                                <span style={{ color: diff > 5 ? (dark?"#f87171":"#dc2626") : diff < -5 ? (dark?"#4ade80":"#15803d") : T.textMuted, fontWeight:600 }}>
+                                  {" "}{diff > 0 ? `+${diff}` : diff}m
+                                </span>
+                              )})
+                            </span>
+                          )}
+                        </div>
+                        <span style={{ color:T.textMuted, fontSize:10, fontFamily:FONT }}>
+                          {new Date(h.ts).toLocaleDateString([],{month:"short",day:"numeric"})}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{ color:T.textMuted, fontSize:10, fontFamily:FONT, marginTop:8, textAlign:"center" }}>
+                  Avg actual wait: {Math.round(myHistory.reduce((s,h)=>s+h.mins,0)/myHistory.length)}m over {myHistory.length} visit{myHistory.length!==1?"s":""}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -660,6 +777,7 @@ export default function App() {
   const [heightFilter, setHeightFilter] = useState("all");
   const [a11yFilter, setA11yFilter]     = useState("all");
   const [listCollapsed, setListCollapsed] = useState(false);
+  const [headerCollapsed, setHeaderCollapsed] = useState(false);
   // sortBy: "wait_asc" | "wait_desc" | "name_asc" | "name_desc"
   const [sortBy, setSortBy]         = useState("wait_asc");
   const [alertModal, setAlertModal] = useState(null);
@@ -902,76 +1020,32 @@ export default function App() {
       {showPlanner && <DayPlanner T={T} dark={dark} accent={park.accent} accentLight={park.accentLight} accentDark={park.accentDark} parks={ridesData} onClose={()=>{setShowPlanner(false);setPlanRide(null);}} token={token} prefill={planRide} activeParkId={activePark} />}
 
       {/* Header */}
-      <div style={{ background:greggyMode?"#1a5200":park.color, padding:`${isDesktop?"28px":"52px"} 20px 20px`, position:"relative", overflow:"hidden",
+      <div style={{ background:greggyMode?"#1a5200":park.color, padding:`${isDesktop?"28px":"52px"} 20px 0`, position:"relative", overflow:"hidden",
         animation: greggyMode ? "greggy-glow 2s infinite" : "none" }}>
         <div style={{ position:"absolute",top:-40,right:-40,width:160,height:160,borderRadius:"50%",background:"rgba(255,255,255,0.06)",pointerEvents:"none" }} />
         {greggyMode && <div style={{ position:"absolute",top:8,left:0,right:0,textAlign:"center",fontSize:11,color:"#f5c800",fontFamily:FONT,fontWeight:700,letterSpacing:2,textTransform:"uppercase" }}>🐢 GREGGY MODE ACTIVATED 🐢</div>}
 
-        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4 }}>
-          <div>
-            <div style={{ fontSize:11,color:"rgba(255,255,255,0.6)",textTransform:"uppercase",letterSpacing:2,fontWeight:600,marginBottom:4 }}>Walt Disney World</div>
+        {/* Always-visible top row: park name + refresh + collapse toggle */}
+        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10 }}>
+          <div style={{ cursor:"pointer" }} onClick={()=>setHeaderCollapsed(h=>!h)}>
+            <div style={{ fontSize:11,color:"rgba(255,255,255,0.6)",textTransform:"uppercase",letterSpacing:2,fontWeight:600,marginBottom:2 }}>Walt Disney World</div>
             <div style={{ fontSize:26,fontWeight:900,color:greggyMode?"#f5c800":"#fff",letterSpacing:-0.5 }}>{park.icon} {park.name}</div>
           </div>
-          <button onClick={()=>fetchParkData(activePark)} disabled={loading}
-            style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"8px 12px",color:loading?"rgba(255,255,255,0.4)":"#fff",fontSize:18,cursor:loading?"default":"pointer",flexShrink:0 }}>
-            {loading?"⟳":"↻"}
-          </button>
+          <div style={{ display:"flex",gap:6,alignItems:"center" }}>
+            <button onClick={()=>fetchParkData(activePark)} disabled={loading}
+              style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"8px 12px",color:loading?"rgba(255,255,255,0.4)":"#fff",fontSize:18,cursor:loading?"default":"pointer" }}>
+              {loading?"⟳":"↻"}
+            </button>
+            <button onClick={()=>setHeaderCollapsed(h=>!h)}
+              style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"8px 12px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:FONT }}>
+              {headerCollapsed?"▼":"▲"}
+            </button>
+          </div>
         </div>
 
-        <div style={{ color:"rgba(255,255,255,0.5)",fontSize:11,marginBottom:10 }}>
-          {loading?"Fetching live data…":lastRefresh?`Live · Updated ${lastRefresh.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}`:"Loading…"}
-        </div>
-
-        {/* Park hours */}
-        {(() => {
-          const s = schedules[activePark]?.schedule;
-          if (!s) return null;
-          const open  = s.openingTime  ? new Date(s.openingTime).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}) : null;
-          const close = s.closingTime  ? new Date(s.closingTime).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}) : null;
-          const special = schedules[activePark]?.special || [];
-          if (!open && !close) return null;
-          return (
-            <div style={{ marginBottom:10 }}>
-              <div style={{ display:"flex",alignItems:"center",gap:8,flexWrap:"wrap" }}>
-                <span style={{ background:"rgba(255,255,255,0.15)",borderRadius:20,padding:"4px 12px",color:"#fff",fontSize:12,fontWeight:600,fontFamily:FONT }}>🕘 {open} – {close}</span>
-                {special.map((sp,i) => (
-                  <span key={i} style={{ background:"rgba(255,215,0,0.2)",borderRadius:20,padding:"4px 12px",color:"#ffd700",fontSize:11,fontWeight:600,fontFamily:FONT,border:"1px solid rgba(255,215,0,0.3)" }}>
-                    ✨ {sp.type?.replace(/_/g," ")}: {sp.openingTime?new Date(sp.openingTime).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}):""}
-                    {sp.closingTime?` – ${new Date(sp.closingTime).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}` :""}
-                  </span>
-                ))}
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* Secondary actions */}
-        <div style={{ display:"flex",gap:6,alignItems:"center",marginBottom:14,flexWrap:"wrap" }}>
-          <button onClick={handleLogout}
-            style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:20,padding:"5px 12px",color:"#fff",fontFamily:FONT,fontSize:11,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap" }}>
-            👤 {username}
-          </button>
-          <button onClick={()=>setGreggyMode(g=>!g)} style={{
-            background: greggyMode?"#f5c800":"rgba(255,255,255,0.15)",
-            border: greggyMode?"2px solid #fff":"none",
-            borderRadius:20, padding:"5px 12px",
-            color: greggyMode?"#0d1f00":"#fff",
-            fontFamily:FONT, fontSize:11, fontWeight:800, cursor:"pointer", whiteSpace:"nowrap",
-          }}>🐢 {greggyMode?"Exit Greggy Mode":"Greggy Mode"}</button>
-          <div style={{ flex:1 }} />
-          <button onClick={()=>setShowMap(true)} style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>🗺</button>
-          <button onClick={()=>setShowCalendar(true)} title="Crowd Calendar" style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>📅</button>
-          <button onClick={()=>setShowPlanner(true)} title="Day Planner" style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>📋</button>
-          <a href="https://disneyworld.disney.go.com/app/" target="_blank" rel="noreferrer"
-            style={{ background:"rgba(255,255,255,0.15)",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,textDecoration:"none",display:"inline-flex",alignItems:"center" }}>🏰</a>
-          <button onClick={()=>setDark(d=>!d)} style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>
-            {dark?"☀️":"🌙"}
-          </button>
-        </div>
-
-        {/* Park switcher — hidden on desktop (sidebar handles it) */}
+        {/* Park switcher — always visible on mobile */}
         {!isDesktop && (
-          <div style={{ display:"flex",gap:6,overflowX:"auto",paddingBottom:2,marginBottom:14 }}>
+          <div style={{ display:"flex",gap:6,overflowX:"auto",paddingBottom:12 }}>
             {Object.entries(PARKS).map(([id,p]) => (
               <button key={id} onClick={()=>{ setActivePark(id); setListCollapsed(false); }} style={{ background:activePark===id?"rgba(255,255,255,0.25)":"rgba(255,255,255,0.1)",color:"#fff",border:activePark===id?"1.5px solid rgba(255,255,255,0.5)":"1px solid rgba(255,255,255,0.15)",borderRadius:20,padding:"5px 14px",fontSize:12,fontWeight:activePark===id?700:400,cursor:"pointer",whiteSpace:"nowrap",fontFamily:FONT }}>
                 {p.icon} {id.toUpperCase()}
@@ -980,6 +1054,61 @@ export default function App() {
           </div>
         )}
 
+        {/* Collapsible section */}
+        {!headerCollapsed && (
+          <div style={{ paddingBottom:20 }}>
+            <div style={{ color:"rgba(255,255,255,0.5)",fontSize:11,marginBottom:10 }}>
+              {loading?"Fetching live data…":lastRefresh?`Live · Updated ${lastRefresh.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}`:"Loading…"}
+            </div>
+
+            {/* Park hours */}
+            {(() => {
+              const s = schedules[activePark]?.schedule;
+              if (!s) return null;
+              const open  = s.openingTime  ? new Date(s.openingTime).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}) : null;
+              const close = s.closingTime  ? new Date(s.closingTime).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}) : null;
+              const special = schedules[activePark]?.special || [];
+              if (!open && !close) return null;
+              return (
+                <div style={{ marginBottom:10 }}>
+                  <div style={{ display:"flex",alignItems:"center",gap:8,flexWrap:"wrap" }}>
+                    <span style={{ background:"rgba(255,255,255,0.15)",borderRadius:20,padding:"4px 12px",color:"#fff",fontSize:12,fontWeight:600,fontFamily:FONT }}>🕘 {open} – {close}</span>
+                    {special.map((sp,i) => (
+                      <span key={i} style={{ background:"rgba(255,215,0,0.2)",borderRadius:20,padding:"4px 12px",color:"#ffd700",fontSize:11,fontWeight:600,fontFamily:FONT,border:"1px solid rgba(255,215,0,0.3)" }}>
+                        ✨ {sp.type?.replace(/_/g," ")}: {sp.openingTime?new Date(sp.openingTime).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}):""}
+                        {sp.closingTime?` – ${new Date(sp.closingTime).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}` :""}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Secondary actions */}
+            <div style={{ display:"flex",gap:6,alignItems:"center",flexWrap:"wrap" }}>
+              <button onClick={handleLogout}
+                style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:20,padding:"5px 12px",color:"#fff",fontFamily:FONT,fontSize:11,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap" }}>
+                👤 {username}
+              </button>
+              <button onClick={()=>setGreggyMode(g=>!g)} style={{
+                background: greggyMode?"#f5c800":"rgba(255,255,255,0.15)",
+                border: greggyMode?"2px solid #fff":"none",
+                borderRadius:20, padding:"5px 12px",
+                color: greggyMode?"#0d1f00":"#fff",
+                fontFamily:FONT, fontSize:11, fontWeight:800, cursor:"pointer", whiteSpace:"nowrap",
+              }}>🐢 {greggyMode?"Exit Greggy Mode":"Greggy Mode"}</button>
+              <div style={{ flex:1 }} />
+              <button onClick={()=>setShowMap(true)} style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>🗺</button>
+              <button onClick={()=>setShowCalendar(true)} title="Crowd Calendar" style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>📅</button>
+              <button onClick={()=>setShowPlanner(true)} title="Day Planner" style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>📋</button>
+              <a href="https://disneyworld.disney.go.com/app/" target="_blank" rel="noreferrer"
+                style={{ background:"rgba(255,255,255,0.15)",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,textDecoration:"none",display:"inline-flex",alignItems:"center" }}>🏰</a>
+              <button onClick={()=>setDark(d=>!d)} style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>
+                {dark?"☀️":"🌙"}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Desktop: flex row with sidebar + content. Mobile: just content */}
