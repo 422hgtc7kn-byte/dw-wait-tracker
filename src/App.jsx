@@ -504,14 +504,14 @@ function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleF
               </div>
               <button
                 onClick={e=>{e.stopPropagation();stopTimer();}}
-                style={{ background:dark?"#dc2626":"#dc2626",border:"none",borderRadius:10,padding:"8px 18px",color:"#fff",fontFamily:FONT,fontWeight:700,fontSize:13,cursor:"pointer",flexShrink:0 }}>
+                style={{ background:"#dc2626",border:"none",borderRadius:10,padding:"8px 18px",color:"#fff",fontFamily:FONT,fontWeight:700,fontSize:13,cursor:"pointer",flexShrink:0 }}>
                 ✓ Done
               </button>
             </div>
           ) : (
             <button
               onClick={e=>{e.stopPropagation();startTimer();}}
-              style={{ width:"100%",padding:"8px 12px",borderRadius:12,border:`1.5px solid ${T.border}`,background:T.bg,color:T.textSub,fontFamily:FONT,fontWeight:600,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6 }}>
+              style={{ width:"100%",padding:"9px 12px",borderRadius:12,border:`1.5px solid ${accent}`,background:dark?accentDark:accentLight,color:accent,fontFamily:FONT,fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6,boxSizing:"border-box" }}>
               ⏱ Time my wait
             </button>
           )}
