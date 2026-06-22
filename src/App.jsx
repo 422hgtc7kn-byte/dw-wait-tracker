@@ -493,29 +493,27 @@ function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleF
         </div>
       </div>
 
-      {/* Line timer button — prominent, always on card face */}
+      {/* Line timer button — always on card face for operating rides */}
       {isOperating && (
-        <div style={{ marginTop:10 }}>
-          {timerStart ? (
-            <div style={{ display:"flex",alignItems:"center",gap:8,padding:"10px 14px",borderRadius:12,background:dark?"#3b0a0a":"#fee2e2",border:`1.5px solid ${dark?"#ef4444":"#fca5a5"}` }}>
-              <div style={{ flex:1 }}>
-                <div style={{ color:dark?"#f87171":"#dc2626",fontSize:20,fontWeight:800,fontFamily:FONT,letterSpacing:1 }}>{fmtElapsed(elapsed)}</div>
-                <div style={{ color:dark?"#fca5a5":"#9f1239",fontSize:11,fontFamily:FONT }}>⏱ In line now…</div>
-              </div>
-              <button
-                onClick={e=>{e.stopPropagation();stopTimer();}}
-                style={{ background:"#dc2626",border:"none",borderRadius:10,padding:"8px 18px",color:"#fff",fontFamily:FONT,fontWeight:700,fontSize:13,cursor:"pointer",flexShrink:0 }}>
-                ✓ Done
-              </button>
+        timerStart ? (
+          <div style={{ display:"flex",alignItems:"center",gap:8,padding:"10px 14px",borderRadius:12,marginTop:10,background:dark?"#3b0a0a":"#fee2e2",border:`1.5px solid ${dark?"#ef4444":"#fca5a5"}` }}>
+            <div style={{ flex:1 }}>
+              <div style={{ color:dark?"#f87171":"#dc2626",fontSize:20,fontWeight:800,fontFamily:FONT,letterSpacing:1 }}>{fmtElapsed(elapsed)}</div>
+              <div style={{ color:dark?"#fca5a5":"#9f1239",fontSize:11,fontFamily:FONT }}>⏱ In line now…</div>
             </div>
-          ) : (
             <button
-              onClick={e=>{e.stopPropagation();startTimer();}}
-              style={{ width:"100%",padding:"9px 12px",borderRadius:12,border:`1.5px solid ${accent}`,background:dark?accentDark:accentLight,color:accent,fontFamily:FONT,fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6,boxSizing:"border-box" }}>
-              ⏱ Time my wait
+              onClick={e=>{e.stopPropagation();stopTimer();}}
+              style={{ background:"#dc2626",border:"none",borderRadius:10,padding:"8px 18px",color:"#fff",fontFamily:FONT,fontWeight:700,fontSize:13,cursor:"pointer",flexShrink:0 }}>
+              ✓ Done
             </button>
-          )}
-        </div>
+          </div>
+        ) : (
+          <button
+            onClick={e=>{e.stopPropagation();startTimer();}}
+            style={{ width:"100%",padding:"9px 12px",borderRadius:12,border:"none",background:accent,color:"#fff",fontFamily:FONT,fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6,boxSizing:"border-box",marginTop:10 }}>
+            ⏱ Time my wait
+          </button>
+        )
       )}
 
       {/* Best time NOW banner */}
