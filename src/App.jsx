@@ -603,7 +603,7 @@ function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleF
               </div>
               <div style={{ color:T.textMuted, fontSize:10, fontFamily:FONT, textTransform:"uppercase", letterSpacing:1, fontWeight:600, marginBottom:6 }}>Past waits</div>
               <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
-                  {myHistory.map((h, i) => {
+                {myHistory.map((h, i) => {
                     const diff = h.posted != null ? h.mins - h.posted : null;
                     return (
                       <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"6px 10px", borderRadius:8, background:T.surface }}>
@@ -630,7 +630,6 @@ function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleF
                 <div style={{ color:T.textMuted, fontSize:10, fontFamily:FONT, marginTop:8, textAlign:"center" }}>
                   Avg actual wait: {Math.round(myHistory.reduce((s,h)=>s+h.mins,0)/myHistory.length)}m over {myHistory.length} visit{myHistory.length!==1?"s":""}
                 </div>
-              </div>
             </div>
           )}
         </div>
