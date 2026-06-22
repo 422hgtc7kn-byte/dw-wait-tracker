@@ -412,7 +412,7 @@ function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleF
   function stopTimer() {
     if (!timerStart) return;
     const mins = Math.round(elapsed / 60);
-    const entry = { ts: Date.now(), mins, posted: ride.queue?.STANDBY?.waitTime ?? null };
+    const entry = { ts: Date.now(), mins, posted: ride.queue?.STANDBY?.waitTime ?? null, name: ride.name };
     const updated = { ...lineHistory, [ride.id]: [entry, ...myHistory].slice(0, 10) };
     setLineHistory(updated);
     saveLineHistory(updated);
@@ -638,7 +638,195 @@ function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleF
   );
 }
 
-// ── ShowCard ──────────────────────────────────────────────────────────────────
+// ── WaitAccuracy modal ────────────────────────────────────────────────────────
+function WaitAccuracy({ T, dark, accent, accentLight, accentDark, onClose }) {
+  const history = loadLineHistory(); // { rideId: [{ts, mins, posted}] }
+  const [sort, setSort] = useState("bias"); // bias | name | entries
+
+  // Flatten all entries across all rides
+  const allEntries = Object.entries(history).flatMap(([rideId, entries]) =>
+    entries.filter(e => e.posted != null).map(e => ({ ...e, rideId, diff: e.mins - e.posted }))
+  );
+
+  const totalEntries = allEntries.length;
+  const withPosted   = allEntries.length; // already filtered above
+
+  // Overall stats
+  const overallAvgDiff   = withPosted ? allEntries.reduce((s,e)=>s+e.diff,0)/withPosted : null;
+  const overallAvgActual = withPosted ? allEntries.reduce((s,e)=>s+e.mins,0)/withPosted : null;
+  const overallAvgPosted = withPosted ? allEntries.reduce((s,e)=>s+e.posted,0)/withPosted : null;
+  const accurate   = allEntries.filter(e=>Math.abs(e.diff)<=5).length;
+  const overWait   = allEntries.filter(e=>e.diff > 5).length;
+  const underWait  = allEntries.filter(e=>e.diff < -5).length;
+
+  // Per-ride stats
+  const rideStats = Object.entries(history).map(([rideId, entries]) => {
+    const valid = entries.filter(e => e.posted != null);
+    if (!valid.length) return null;
+    const avgActual = valid.reduce((s,e)=>s+e.mins,0)/valid.length;
+    const avgPosted = valid.reduce((s,e)=>s+e.posted,0)/valid.length;
+    const avgDiff   = avgActual - avgPosted;
+    // Derive a clean name: stored as rideId which may be a UUID — use last entry's posted context
+    // We'll just show the rideId for now; in a future update could store name alongside
+    return { rideId, name: valid[0].name || rideId, entries: valid.length, avgActual, avgPosted, avgDiff, last: valid[0].ts };
+  }).filter(Boolean);
+
+  const sortedRideStats = [...rideStats].sort((a,b) => {
+    if (sort==="bias")    return Math.abs(b.avgDiff) - Math.abs(a.avgDiff);
+    if (sort==="entries") return b.entries - a.entries;
+    if (sort==="name")    return a.rideId.localeCompare(b.rideId);
+    return 0;
+  });
+
+  // Accuracy verdict
+  const verdict = overallAvgDiff == null ? null
+    : overallAvgDiff >  10 ? { label:"Posted times run short",  icon:"⚠️", tip:"Disney consistently underestimates. Add ~"+Math.round(overallAvgDiff)+"m to any posted wait.", color:dark?"#f87171":"#dc2626", bg:dark?"#3b0a0a":"#fee2e2" }
+    : overallAvgDiff >   5 ? { label:"Posted times slightly short", icon:"🟠", tip:"Actual waits tend to be a bit longer than posted.", color:dark?"#fb923c":"#c2410c", bg:dark?"#431407":"#ffedd5" }
+    : overallAvgDiff <  -10? { label:"Posted times run long",   icon:"✅", tip:"Disney overestimates. Real waits are shorter — great news!", color:dark?"#4ade80":"#15803d", bg:dark?"#052e16":"#dcfce7" }
+    : overallAvgDiff <  -5 ? { label:"Posted times slightly long",  icon:"🟢", tip:"Actual waits tend to be a bit shorter than posted.", color:dark?"#34d399":"#166534", bg:dark?"#064e3b":"#bbf7d0" }
+    :                        { label:"Posted times are accurate", icon:"🎯", tip:"Disney's estimates match your real waits closely.", color:dark?"#a78bfa":"#6d28d9", bg:dark?"#2e1065":"#ede9fe" };
+
+  const diffColor = (diff) =>
+    diff >  10 ? (dark?"#f87171":"#dc2626") :
+    diff >   5 ? (dark?"#fb923c":"#c2410c") :
+    diff < -10 ? (dark?"#4ade80":"#15803d") :
+    diff <  -5 ? (dark?"#34d399":"#166534") :
+                 (dark?"#a78bfa":"#6d28d9");
+
+  const diffLabel = (diff) =>
+    diff > 0 ? `+${Math.round(diff)}m longer` :
+    diff < 0 ? `${Math.round(diff)}m shorter` :
+    "Exact";
+
+  return (
+    <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center" }} onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:T.bg,borderRadius:"24px 24px 0 0",width:"100%",maxWidth:500,maxHeight:"92vh",overflow:"auto",boxShadow:"0 -4px 32px rgba(0,0,0,0.3)" }}>
+
+        {/* Header */}
+        <div style={{ padding:"20px 20px 0",position:"sticky",top:0,background:T.bg,zIndex:1,borderBottom:`1px solid ${T.border}`,paddingBottom:14 }}>
+          <div style={{ width:36,height:4,borderRadius:2,background:T.border,margin:"0 auto 16px" }} />
+          <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center" }}>
+            <div style={{ color:T.text,fontWeight:700,fontSize:18,fontFamily:FONT }}>📊 Wait Accuracy</div>
+            <button onClick={onClose} style={{ background:"none",border:"none",color:T.textMuted,fontSize:22,cursor:"pointer" }}>✕</button>
+          </div>
+          <div style={{ color:T.textMuted,fontSize:12,fontFamily:FONT,marginTop:4 }}>
+            Based on {totalEntries} timed wait{totalEntries!==1?"s":""} across {rideStats.length} ride{rideStats.length!==1?"s":""}
+          </div>
+        </div>
+
+        <div style={{ padding:"16px 20px 48px" }}>
+
+          {/* No data state */}
+          {totalEntries === 0 && (
+            <div style={{ textAlign:"center",padding:"48px 20px",color:T.textMuted,fontFamily:FONT }}>
+              <div style={{ fontSize:48,marginBottom:16 }}>⏱</div>
+              <div style={{ fontSize:16,fontWeight:700,color:T.textSub,marginBottom:8 }}>No data yet</div>
+              <div style={{ fontSize:13,lineHeight:1.6 }}>
+                Tap <strong style={{color:T.text}}>⏱ Time my wait</strong> on any ride card,<br/>then <strong style={{color:T.text}}>✓ Done</strong> when you board.<br/>Your accuracy data will appear here.
+              </div>
+            </div>
+          )}
+
+          {totalEntries > 0 && (
+            <>
+              {/* Verdict card */}
+              {verdict && (
+                <div style={{ padding:"16px",borderRadius:16,background:verdict.bg,border:`1px solid ${verdict.color}44`,marginBottom:16 }}>
+                  <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:6 }}>
+                    <span style={{ fontSize:20 }}>{verdict.icon}</span>
+                    <span style={{ color:verdict.color,fontWeight:800,fontSize:15,fontFamily:FONT }}>{verdict.label}</span>
+                  </div>
+                  <div style={{ color:verdict.color,fontSize:13,fontFamily:FONT,opacity:0.85,lineHeight:1.5 }}>{verdict.tip}</div>
+                </div>
+              )}
+
+              {/* Overall stats row */}
+              <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:16 }}>
+                {[
+                  { label:"Avg posted", value:`${Math.round(overallAvgPosted)}m`, sub:"Disney said" },
+                  { label:"Avg actual", value:`${Math.round(overallAvgActual)}m`, sub:"You waited" },
+                  { label:"Avg diff",   value:diffLabel(overallAvgDiff), sub:"vs posted", color:diffColor(overallAvgDiff) },
+                ].map((s,i)=>(
+                  <div key={i} style={{ background:T.surface,borderRadius:12,padding:"12px 10px",textAlign:"center",border:`1px solid ${T.border}` }}>
+                    <div style={{ color:s.color||T.text,fontWeight:800,fontSize:15,fontFamily:FONT }}>{s.value}</div>
+                    <div style={{ color:T.textSub,fontSize:11,fontFamily:FONT,fontWeight:600,marginTop:2 }}>{s.label}</div>
+                    <div style={{ color:T.textMuted,fontSize:10,fontFamily:FONT }}>{s.sub}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Accuracy breakdown bar */}
+              <div style={{ background:T.surface,borderRadius:12,padding:"14px",marginBottom:16,border:`1px solid ${T.border}` }}>
+                <div style={{ color:T.textSub,fontSize:11,fontFamily:FONT,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10 }}>Accuracy breakdown</div>
+                <div style={{ display:"flex",borderRadius:8,overflow:"hidden",height:16,marginBottom:10 }}>
+                  {withPosted > 0 && [
+                    { count:underWait,  color:dark?"#4ade80":"#22c55e" },
+                    { count:accurate,   color:dark?"#a78bfa":"#7c3aed" },
+                    { count:overWait,   color:dark?"#f87171":"#ef4444" },
+                  ].map((bar,i)=>(
+                    bar.count > 0 && <div key={i} style={{ flex:bar.count,background:bar.color,transition:"flex 0.5s" }} />
+                  ))}
+                </div>
+                <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
+                  {[
+                    { label:"Shorter than posted", count:underWait,  color:dark?"#4ade80":"#15803d" },
+                    { label:"Within 5 min",        count:accurate,   color:dark?"#a78bfa":"#6d28d9" },
+                    { label:"Longer than posted",  count:overWait,   color:dark?"#f87171":"#dc2626" },
+                  ].map((item,i)=>(
+                    <div key={i} style={{ display:"flex",alignItems:"center",gap:5 }}>
+                      <div style={{ width:10,height:10,borderRadius:2,background:item.color,flexShrink:0 }} />
+                      <span style={{ color:T.textMuted,fontSize:11,fontFamily:FONT }}>{item.count}× {item.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Per-ride breakdown */}
+              {rideStats.length > 0 && (
+                <div style={{ background:T.surface,borderRadius:12,padding:"14px",border:`1px solid ${T.border}` }}>
+                  <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12 }}>
+                    <div style={{ color:T.textSub,fontSize:11,fontFamily:FONT,fontWeight:700,textTransform:"uppercase",letterSpacing:1 }}>By ride</div>
+                    <div style={{ display:"flex",gap:4 }}>
+                      {[["bias","Biggest gap"],["entries","Most timed"],["name","A–Z"]].map(([id,label])=>(
+                        <button key={id} onClick={()=>setSort(id)} style={{ padding:"3px 8px",borderRadius:8,border:`1px solid ${sort===id?accent:T.border}`,background:sort===id?accent:"transparent",color:sort===id?"#fff":T.textMuted,fontSize:10,fontFamily:FONT,cursor:"pointer" }}>{label}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
+                    {sortedRideStats.map((rs,i)=>{
+                      const barMax = Math.max(...rideStats.map(r=>Math.abs(r.avgDiff)), 1);
+                      const barPct = Math.min(100, Math.round((Math.abs(rs.avgDiff)/barMax)*100));
+                      const color  = diffColor(rs.avgDiff);
+                      return (
+                        <div key={rs.rideId} style={{ padding:"10px 12px",borderRadius:10,background:T.bg,border:`1px solid ${T.border}` }}>
+                          <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6 }}>
+                            <div style={{ flex:1,paddingRight:8 }}>
+                              <div style={{ color:T.text,fontWeight:600,fontSize:13,fontFamily:FONT }}>{rs.name}</div>
+                              <div style={{ color:T.textMuted,fontSize:11,fontFamily:FONT,marginTop:1 }}>{rs.entries} timing{rs.entries!==1?"s":""} · avg posted {Math.round(rs.avgPosted)}m</div>
+                            </div>
+                            <div style={{ textAlign:"right",flexShrink:0 }}>
+                              <div style={{ color,fontWeight:800,fontSize:14,fontFamily:FONT }}>{diffLabel(rs.avgDiff)}</div>
+                              <div style={{ color:T.textMuted,fontSize:10,fontFamily:FONT }}>avg actual {Math.round(rs.avgActual)}m</div>
+                            </div>
+                          </div>
+                          <div style={{ height:4,borderRadius:2,background:dark?"rgba(255,255,255,0.08)":"rgba(0,0,0,0.06)",overflow:"hidden" }}>
+                            <div style={{ width:`${barPct}%`,height:"100%",background:color,borderRadius:2,transition:"width 0.5s" }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 function ShowCard({ show, accent, accentLight, accentDark, isFavorite, onToggleFavorite, isHidden, onToggleHidden, T, dark }) {
   const [expanded, setExpanded] = useState(false);
   const showtimes = (show.showtimes||[]).filter(st=>isUpcoming(st.startTime));
@@ -763,6 +951,7 @@ export default function App() {
   const [showMap, setShowMap]           = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
   const [showPlanner, setShowPlanner]   = useState(false);
+  const [showAccuracy, setShowAccuracy] = useState(false);
   const [planRide, setPlanRide]         = useState(null);
   const [schedules, setSchedules]   = useState({});
 
@@ -1015,6 +1204,7 @@ export default function App() {
       {showMap && <MapModal park={park} onClose={()=>setShowMap(false)} T={T} dark={dark} />}
       {showCalendar && <CrowdCalendar T={T} dark={dark} accent={park.accent} accentLight={park.accentLight} accentDark={park.accentDark} onClose={()=>setShowCalendar(false)} />}
       {showPlanner && <DayPlanner T={T} dark={dark} accent={park.accent} accentLight={park.accentLight} accentDark={park.accentDark} parks={ridesData} onClose={()=>{setShowPlanner(false);setPlanRide(null);}} token={token} prefill={planRide} activeParkId={activePark} />}
+      {showAccuracy && <WaitAccuracy T={T} dark={dark} accent={park.accent} accentLight={park.accentLight} accentDark={park.accentDark} onClose={()=>setShowAccuracy(false)} />}
 
       {/* Header */}
       <div style={{ background:greggyMode?"#1a5200":park.color, padding:`${isDesktop?"28px":"52px"} 20px 0`, position:"relative", overflow:"hidden",
@@ -1096,6 +1286,7 @@ export default function App() {
               }}>🐢 {greggyMode?"Exit Greggy Mode":"Greggy Mode"}</button>
               <div style={{ flex:1 }} />
               <button onClick={()=>setShowMap(true)} style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>🗺</button>
+              <button onClick={()=>setShowAccuracy(true)} title="Wait Accuracy" style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>📊</button>
               <button onClick={()=>setShowCalendar(true)} title="Crowd Calendar" style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>📅</button>
               <button onClick={()=>setShowPlanner(true)} title="Day Planner" style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>📋</button>
               <a href="https://disneyworld.disney.go.com/app/" target="_blank" rel="noreferrer"
