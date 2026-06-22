@@ -175,8 +175,37 @@ async function saveHistory(rides) {
   try { await fetch("/api/history", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ snapshots }) }); } catch {}
 }
 
-async function fetchTrend(rideId) {
-  try { const res = await fetch(`/api/history?rideId=${rideId}`); if (!res.ok) return null; return await res.json(); } catch { return null; }
+// Client-side season helper — must match api/season.js exactly
+function getClientSeason(date) {
+  const d = date || new Date();
+  const m  = d.getMonth() + 1;
+  const dy = d.getDate();
+  const md = m * 100 + dy;
+  if (md >= 1215 || md <= 105) return 'peak';
+  if (md >= 315  && md <= 415) return 'peak';
+  if (md >= 628  && md <= 707) return 'peak';
+  if (md >= 1122 && md <= 1130) return 'peak';
+  if (m >= 6 && m <= 8) return 'summer';
+  if (m === 9 || m === 10) return 'holiday';
+  if (m === 11 && md < 1122) return 'holiday';
+  if (md >= 1201 && md <= 1214) return 'holiday';
+  return 'value';
+}
+
+const SEASON_META = {
+  value:   { label: 'Value',   icon: '🟢', tip: 'Jan–Feb, early Sep/Dec' },
+  holiday: { label: 'Holiday', icon: '🟡', tip: 'Halloween, Nov, early Dec' },
+  summer:  { label: 'Summer',  icon: '🟠', tip: 'June–August' },
+  peak:    { label: 'Peak',    icon: '🔴', tip: 'Christmas, Spring Break, July 4, Thanksgiving' },
+};
+
+async function fetchTrend(rideId, season = 'all') {
+  try {
+    const param = season !== 'all' ? `&season=${season}` : '';
+    const res = await fetch(`/api/history?rideId=${rideId}${param}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }
 }
 
 // ── WaitBadge ─────────────────────────────────────────────────────────────────
@@ -447,11 +476,13 @@ function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleF
     return bestHours(merged).some(b => b.i === nowIdx);
   })();
 
+  const [selectedSeason, setSelectedSeason] = useState(() => getClientSeason());
+
   useEffect(() => {
-    if (!expanded || trendLoading) return;
+    if (!expanded) return;
     setTrendLoading(true);
-    fetchTrend(ride.id).then(data => { setTrendData(data); setTrendLoading(false); });
-  }, [expanded, ride.id]);
+    fetchTrend(ride.id, selectedSeason).then(data => { setTrendData(data); setTrendLoading(false); });
+  }, [expanded, ride.id, selectedSeason]);
 
   if (isHidden) return null;
 
@@ -540,6 +571,32 @@ function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleF
               <WaitBadge minutes={ride.queue.LIGHTNING_LANE.waitTime} status="OPERATING" dark={dark} />
             </div>
           )}
+
+          {/* Season selector */}
+          <div style={{ display:"flex", gap:4, marginBottom:10, flexWrap:"wrap" }}>
+            {['all', ...Object.keys(SEASON_META)].map(s => {
+              const meta = SEASON_META[s];
+              const isActive = selectedSeason === s || (s === 'all' && selectedSeason === 'all');
+              return (
+                <button key={s} onClick={() => setSelectedSeason(s)} style={{
+                  padding:"3px 10px", borderRadius:20, fontSize:11, fontFamily:FONT, cursor:"pointer",
+                  fontWeight: isActive ? 700 : 400,
+                  background: isActive ? accent : T.bg,
+                  color: isActive ? "#fff" : T.textMuted,
+                  border: `1px solid ${isActive ? accent : T.border}`,
+                }}>
+                  {s === 'all' ? '📅 All seasons' : `${meta.icon} ${meta.label}`}
+                  {s === getClientSeason() && s !== 'all' && <span style={{ marginLeft:3, opacity:0.7 }}>(now)</span>}
+                </button>
+              );
+            })}
+          </div>
+          {trendData?.bySeason && selectedSeason !== 'all' && (
+            <div style={{ color:T.textMuted, fontSize:10, fontFamily:FONT, marginBottom:8 }}>
+              {trendData.bySeason[selectedSeason] ?? 0} readings for {SEASON_META[selectedSeason]?.label} · {SEASON_META[selectedSeason]?.tip}
+            </div>
+          )}
+
           {trendLoading && <div style={{ height:90,display:"flex",alignItems:"center",justifyContent:"center" }}><span style={{ color:T.textMuted,fontSize:13,fontFamily:FONT }}>Loading trend…</span></div>}
           {!trendLoading && (
             <TrendChart

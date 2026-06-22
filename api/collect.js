@@ -1,7 +1,9 @@
 // api/collect.js
 // Called by Upstash QStash every 30 minutes via HTTP POST
 // Fetches all 4 parks and stores wait times + crowd levels in Upstash Redis
-// Secured with a secret token so only QStash can trigger it
+// Keys include season so like-for-like comparisons are accurate.
+
+import { getSeason } from './season.js';
 
 const PARKS = {
   mk: '75ea578a-adc8-4116-a54d-dccb60765ef9',
@@ -37,11 +39,9 @@ async function redisPipeline(commands) {
 }
 
 export default async function handler(req, res) {
-  // Accept GET, POST, or OPTIONS — so any cron service can call this
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST' && req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
-  // Verify secret token — set COLLECT_SECRET in Vercel env vars and QStash headers
   const secret = process.env.COLLECT_SECRET;
   if (secret) {
     const authHeader = req.headers['authorization'] || '';
@@ -51,12 +51,16 @@ export default async function handler(req, res) {
   }
 
   const now    = new Date();
-  const etStr = now.toLocaleString("en-US", { timeZone: "America/New_York", hour: "numeric", hour12: false }); const etHour = parseInt(etStr, 10);
-  const dow = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" })).getDay();
-  const MAX_RIDE  = 10;
-  const MAX_CROWD = 20;
+  const etNow  = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const etHour = etNow.getHours();
+  const dow    = etNow.getDay();
+  const season = getSeason(etNow);
 
-  const results = { parks: {}, rideSnapshots: 0, crowdSnapshots: 0, errors: [] };
+  // Keep up to 52 readings per slot (~1 year of weekly data)
+  const MAX_RIDE  = 52;
+  const MAX_CROWD = 52;
+
+  const results  = { parks: {}, rideSnapshots: 0, crowdSnapshots: 0, errors: [], season };
   const commands = [];
 
   for (const [parkKey, entityId] of Object.entries(PARKS)) {
@@ -72,37 +76,34 @@ export default async function handler(req, res) {
         e.queue?.STANDBY?.waitTime != null
       );
 
-      // Per-ride snapshots
+      // Per-ride snapshots — keyed by season + dow + hour
       for (const ride of rides) {
-        const key = `wt:${ride.id}:${dow}:${etHour}`;
+        const key = `wt:${ride.id}:${season}:${dow}:${etHour}`;
         commands.push(['LPUSH', key, String(ride.queue.STANDBY.waitTime)]);
         commands.push(['LTRIM', key, '0', String(MAX_RIDE - 1)]);
         results.rideSnapshots++;
       }
 
-      // Park crowd snapshot (avg wait)
+      // Park crowd snapshot — keyed by season + dow + hour
       if (rides.length > 0) {
         const avgWait = Math.round(
           rides.reduce((s, r) => s + r.queue.STANDBY.waitTime, 0) / rides.length
         );
-        const crowdKey = `crowd:${parkKey}:${dow}:${etHour}`;
+        const crowdKey = `crowd:${parkKey}:${season}:${dow}:${etHour}`;
         commands.push(['LPUSH', crowdKey, String(avgWait)]);
         commands.push(['LTRIM', crowdKey, '0', String(MAX_CROWD - 1)]);
         results.crowdSnapshots++;
         results.parks[parkKey] = { rides: rides.length, avgWait };
       }
 
-      // Small delay between parks
       await new Promise(r => setTimeout(r, 800));
     } catch (err) {
       results.errors.push({ park: parkKey, error: err.message });
     }
   }
 
-  if (commands.length > 0) {
-    await redisPipeline(commands);
-  }
+  if (commands.length > 0) await redisPipeline(commands);
 
-  console.log('Collect run:', now.toISOString(), results);
-  return res.status(200).json({ ok: true, ts: now.toISOString(), etHour, dow, ...results });
+  console.log('Collect run:', now.toISOString(), { season, dow, etHour, ...results });
+  return res.status(200).json({ ok: true, ts: now.toISOString(), etHour, dow, season, ...results });
 }
