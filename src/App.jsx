@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import TrendChart from "./TrendChart.jsx";
 import CrowdTrend from "./CrowdTrend.jsx";
 import AuthScreen from "./AuthScreen.jsx";
+import TripPredictor from "./TripPredictor.jsx";
 import CrowdCalendar from "./CrowdCalendar.jsx";
 import DayPlanner from "./DayPlanner.jsx";
 import { getRideDetails, fmtHeight } from "./rideDetails.js";
@@ -1007,8 +1008,9 @@ export default function App() {
   const [lastRefresh, setLastRefresh] = useState(null);
   const [showMap, setShowMap]           = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
-  const [showPlanner, setShowPlanner]   = useState(false);
-  const [showAccuracy, setShowAccuracy] = useState(false);
+  const [showPlanner, setShowPlanner]     = useState(false);
+  const [showAccuracy, setShowAccuracy]   = useState(false);
+  const [showPredictor, setShowPredictor] = useState(false);
   const [planRide, setPlanRide]         = useState(null);
   const [schedules, setSchedules]   = useState({});
 
@@ -1262,6 +1264,7 @@ export default function App() {
       {showCalendar && <CrowdCalendar T={T} dark={dark} accent={park.accent} accentLight={park.accentLight} accentDark={park.accentDark} onClose={()=>setShowCalendar(false)} />}
       {showPlanner && <DayPlanner T={T} dark={dark} accent={park.accent} accentLight={park.accentLight} accentDark={park.accentDark} parks={ridesData} onClose={()=>{setShowPlanner(false);setPlanRide(null);}} token={token} prefill={planRide} activeParkId={activePark} />}
       {showAccuracy && <WaitAccuracy T={T} dark={dark} accent={park.accent} accentLight={park.accentLight} accentDark={park.accentDark} onClose={()=>setShowAccuracy(false)} />}
+      {showPredictor && <TripPredictor T={T} dark={dark} accent={park.accent} accentLight={park.accentLight} accentDark={park.accentDark} onClose={()=>setShowPredictor(false)} />}
 
       {/* Header */}
       <div style={{ background:greggyMode?"#1a5200":park.color, padding:`${isDesktop?"28px":"52px"} 20px 0`, position:"relative", overflow:"hidden",
@@ -1344,6 +1347,7 @@ export default function App() {
               <div style={{ flex:1 }} />
               <button onClick={()=>setShowMap(true)} style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>🗺</button>
               <button onClick={()=>setShowAccuracy(true)} title="Wait Accuracy" style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>📊</button>
+              <button onClick={()=>setShowPredictor(true)} title="Trip Predictor" style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>🔮</button>
               <button onClick={()=>setShowCalendar(true)} title="Crowd Calendar" style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>📅</button>
               <button onClick={()=>setShowPlanner(true)} title="Day Planner" style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>📋</button>
               <a href="https://disneyworld.disney.go.com/app/" target="_blank" rel="noreferrer"
