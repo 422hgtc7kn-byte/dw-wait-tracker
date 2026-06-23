@@ -50,7 +50,6 @@ export default async function handler(req, res) {
       const byDowHour = Array.from({ length: 7 }, () =>
         Array.from({ length: 24 }, () => ({ sum: 0, count: 0 }))
       );
-      // Per-season totals so frontend can show data confidence
       const bySeason = Object.fromEntries(SEASONS.map(s => [s, 0]));
 
       results.forEach(({ result }, i) => {
@@ -64,6 +63,27 @@ export default async function handler(req, res) {
           bySeason[s]++;
         });
       });
+
+      // Fallback: also read old-format keys (no season segment) if new data is sparse
+      const totalNew = byHour.reduce((s, { count }) => s + count, 0);
+      if (totalNew < 50) {
+        const oldKeys = [];
+        for (let dow = 0; dow < 7; dow++)
+          for (let hod = 0; hod < 24; hod++)
+            oldKeys.push({ key: `crowd:${parkId}:${dow}:${hod}`, dow, hod });
+        const oldCmds    = oldKeys.map(({ key }) => ['LRANGE', key, '0', String(MAX_PER_SLOT - 1)]);
+        const oldResults = await redisPipeline(oldCmds);
+        oldResults.forEach(({ result }, i) => {
+          if (!result?.length) return;
+          const { dow, hod } = oldKeys[i];
+          result.forEach(v => {
+            const w = Number(v);
+            if (isNaN(w)) return;
+            byHour[hod].sum += w;         byHour[hod].count++;
+            byDowHour[dow][hod].sum += w; byDowHour[dow][hod].count++;
+          });
+        });
+      }
 
       const hourlyAvg    = byHour.map(({ sum, count }) => count > 0 ? Math.round(sum / count) : null);
       const dowHourlyAvg = byDowHour.map(hours =>
