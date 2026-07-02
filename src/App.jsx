@@ -412,8 +412,58 @@ function saveLineHistory(h) {
   try { localStorage.setItem("dwt_line_history", JSON.stringify(h)); } catch {}
 }
 
+// Downtime tracking: { [rideId]: { name, since: ts, status, history: [{since, until, status, mins}] } }
+function loadDowntimes() {
+  try { return JSON.parse(localStorage.getItem("dwt_downtimes") || "{}"); } catch { return {}; }
+}
+function saveDowntimes(d) {
+  try { localStorage.setItem("dwt_downtimes", JSON.stringify(d)); } catch {}
+}
+
+// Call on each data refresh — detects transitions and updates downtime records
+function updateDowntimes(rides) {
+  const now      = Date.now();
+  const current  = loadDowntimes();
+  const updated  = { ...current };
+  let changed    = false;
+
+  for (const ride of rides) {
+    const isDown = ride.status === "DOWN" || ride.status === "CLOSED";
+    const prev   = updated[ride.id];
+
+    if (isDown && !prev?.since) {
+      // Ride just went down — start tracking
+      updated[ride.id] = {
+        name:    ride.name,
+        since:   now,
+        status:  ride.status,
+        history: prev?.history || [],
+      };
+      changed = true;
+    } else if (isDown && prev?.since && ride.status !== prev.status) {
+      // Status changed while still down (e.g. CLOSED → DOWN)
+      updated[ride.id] = { ...prev, status: ride.status };
+      changed = true;
+    } else if (!isDown && prev?.since) {
+      // Ride came back up — close out the outage
+      const mins = Math.round((now - prev.since) / 60000);
+      const entry = { since: prev.since, until: now, status: prev.status, mins };
+      updated[ride.id] = {
+        name:    ride.name,
+        since:   null,
+        status:  null,
+        history: [entry, ...(prev.history || [])].slice(0, 20),
+      };
+      changed = true;
+    }
+  }
+
+  if (changed) saveDowntimes(updated);
+  return updated;
+}
+
 // ── RideCard ──────────────────────────────────────────────────────────────────
-function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleFavorite, alertThreshold, onSetAlert, isHidden, onToggleHidden, note, onOpenNoteModal, onAddToPlan, T, dark }) {
+function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleFavorite, alertThreshold, onSetAlert, isHidden, onToggleHidden, note, onOpenNoteModal, onAddToPlan, downtime, T, dark }) {
   const [expanded, setExpanded] = useState(false);
   const [trendData, setTrendData] = useState(null);
   const [trendLoading, setTrendLoading] = useState(false);
@@ -468,9 +518,33 @@ function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleF
   const hasAlert = alertThreshold != null;
   const favBg = dark ? accentDark : accentLight;
 
+  // Live downtime counter
+  const [downtimeTick, setDowntimeTick] = useState(0);
+  const isCurrentlyDown = !isOperating && downtime?.since;
+  useEffect(() => {
+    if (!isCurrentlyDown) return;
+    const id = setInterval(() => setDowntimeTick(t => t + 1), 60000); // update every minute
+    return () => clearInterval(id);
+  }, [isCurrentlyDown]);
+
+  function fmtDowntime(since) {
+    const mins = Math.round((Date.now() - since) / 60000);
+    if (mins < 60) return `${mins}m`;
+    const h = Math.floor(mins / 60), m = mins % 60;
+    return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  }
+  function fmtDowntimeRange(since, until) {
+    const mins = Math.round((until - since) / 60000);
+    const start = new Date(since).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
+    const end   = new Date(until).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
+    if (mins < 60) return `${start} – ${end} (${mins}m)`;
+    const h = Math.floor(mins / 60), m = mins % 60;
+    return `${start} – ${end} (${h}h${m > 0 ? ` ${m}m` : ""})`;
+  }
+
   // Is right now one of the 3 best times to ride?
   const isBestTime = (() => {
-    if (!isOperating || wait == null) return false;
+    if (wait == null && !expanded) return false;
     const nowIdx = getETHour() - PARK_OPEN_HOUR;
     if (nowIdx < 0 || nowIdx >= HOUR_LABELS.length) return false;
     const { merged } = mergeWithTypical(trendData?.hourlyAvg ?? null, thrill);
@@ -480,8 +554,7 @@ function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleF
   const [selectedSeason, setSelectedSeason] = useState(() => getClientSeason());
 
   useEffect(() => {
-    if (!expanded) return;
-    setTrendLoading(true);
+    if (!expanded) return;    setTrendLoading(true);
     fetchTrend(ride.id, selectedSeason).then(data => { setTrendData(data); setTrendLoading(false); });
   }, [expanded, ride.id, selectedSeason]);
 
@@ -490,7 +563,7 @@ function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleF
   return (
     <div style={{ ...cardStyle(T), padding:"16px", marginBottom:10, border:isFavorite?`1.5px solid ${accent}`:`1px solid ${T.border}`, background:isFavorite?favBg:T.surface, opacity:ride.status==="REFURBISHMENT"?0.5:1, transition:"background 0.3s" }}>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-        <div style={{ flex:1, paddingRight:10, cursor:isOperating?"pointer":"default" }} onClick={() => isOperating && setExpanded(e => !e)}>
+        <div style={{ flex:1, paddingRight:10, cursor:"pointer" }} onClick={() => setExpanded(e => !e)}>
           <div style={{ color:T.text, fontWeight:600, fontSize:15, fontFamily:FONT, marginBottom:5 }}>{ride.name}</div>
           <div style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
             <ThrillBadge level={thrill} dark={dark} />
@@ -548,6 +621,23 @@ function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleF
         )
       )}
 
+      {/* Live downtime banner — shown on card face when ride is currently down */}
+      {isCurrentlyDown && (
+        <div style={{ marginTop:10, padding:"10px 14px", borderRadius:12, background:dark?"#431407":"#ffedd5", border:`1.5px solid ${dark?"#fb923c":"#f97316"}`, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+          <div>
+            <div style={{ color:dark?"#fb923c":"#c2410c", fontWeight:800, fontSize:18, fontFamily:FONT, letterSpacing:0.5 }}>
+              🔴 {fmtDowntime(downtime.since)}
+            </div>
+            <div style={{ color:dark?"#fed7aa":"#9a3412", fontSize:11, fontFamily:FONT }}>
+              Down since {new Date(downtime.since).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" })}
+            </div>
+          </div>
+          <div style={{ color:dark?"#fb923c":"#c2410c", fontSize:11, fontFamily:FONT, fontWeight:600, textAlign:"right" }}>
+            {downtime.status === "DOWN" ? "⚙️ Technical issue" : "🚫 Closed"}
+          </div>
+        </div>
+      )}
+
       {/* Best time NOW banner */}
       {isBestTime && (
         <div style={{ marginTop:8, padding:"6px 10px", borderRadius:8, background:dark?"#052e16":"#dcfce7", border:`1px solid ${dark?"#166534":"#86efac"}`, display:"flex", alignItems:"center", gap:6 }}>
@@ -558,13 +648,13 @@ function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleF
 
       {/* Note preview — always visible when note exists */}
       {note && !expanded && (
-        <div onClick={() => isOperating && setExpanded(e => !e)} style={{ marginTop:8, padding:"7px 10px", borderRadius:8, background:T.bg, border:`1px solid ${T.border}`, cursor:isOperating?"pointer":"default" }}>
+        <div onClick={() => setExpanded(e => !e)} style={{ marginTop:8, padding:"7px 10px", borderRadius:8, background:T.bg, border:`1px solid ${T.border}`, cursor:"pointer" }}>
           <span style={{ color:T.textMuted, fontSize:11, fontFamily:FONT }}>📝 </span>
           <span style={{ color:T.textSub, fontSize:12, fontFamily:FONT }}>{note}</span>
         </div>
       )}
 
-      {expanded && isOperating && (
+      {expanded && (
         <div style={{ marginTop:14, borderTop:`1px solid ${T.border}`, paddingTop:14 }}>
           {ride.queue?.LIGHTNING_LANE?.waitTime != null && (
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12, background:dark?"#422006":"#fef9c3", borderRadius:10, padding:"8px 12px" }}>
@@ -628,6 +718,38 @@ function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleF
               ))}
             </div>
           )}
+          {/* Downtime history */}
+          {downtime?.history?.length > 0 && (
+            <div style={{ marginTop:12, padding:"12px 14px", borderRadius:12, background:T.bg, border:`1px solid ${T.border}` }}>
+              <div style={{ color:T.textSub, fontSize:11, fontFamily:FONT, fontWeight:700, textTransform:"uppercase", letterSpacing:1, marginBottom:8 }}>🔴 Past Outages</div>
+              <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                {downtime.history.map((h, i) => (
+                  <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"7px 10px", borderRadius:8, background:T.surface }}>
+                    <div>
+                      <div style={{ color:T.text, fontSize:12, fontFamily:FONT, fontWeight:600 }}>
+                        {h.status === "DOWN" ? "⚙️ Technical issue" : "🚫 Closed"}
+                      </div>
+                      <div style={{ color:T.textMuted, fontSize:10, fontFamily:FONT }}>
+                        {fmtDowntimeRange(h.since, h.until)}
+                      </div>
+                    </div>
+                    <div style={{ textAlign:"right" }}>
+                      <div style={{ color: h.mins >= 60 ? (dark?"#f87171":"#dc2626") : h.mins >= 20 ? (dark?"#fb923c":"#c2410c") : T.textSub, fontWeight:700, fontSize:13, fontFamily:FONT }}>
+                        {h.mins >= 60 ? `${Math.floor(h.mins/60)}h ${h.mins%60>0?`${h.mins%60}m`:""}` : `${h.mins}m`}
+                      </div>
+                      <div style={{ color:T.textMuted, fontSize:10, fontFamily:FONT }}>
+                        {new Date(h.since).toLocaleDateString([], { month:"short", day:"numeric" })}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ color:T.textMuted, fontSize:10, fontFamily:FONT, marginTop:8, textAlign:"center" }}>
+                Avg outage: {Math.round(downtime.history.reduce((s,h)=>s+h.mins,0)/downtime.history.length)}m · {downtime.history.length} recorded
+              </div>
+            </div>
+          )}
+
           <button onClick={() => onToggleHidden()} style={{ marginTop:10,width:"100%",padding:9,borderRadius:10,border:`1px solid ${T.border}`,background:T.bg,color:T.textMuted,fontFamily:FONT,fontSize:12,cursor:"pointer" }}>
             Hide this ride
           </button>
@@ -1011,6 +1133,7 @@ export default function App() {
   const [showPlanner, setShowPlanner]     = useState(false);
   const [showAccuracy, setShowAccuracy]   = useState(false);
   const [showPredictor, setShowPredictor] = useState(false);
+  const [downtimes, setDowntimes]         = useState(() => loadDowntimes());
   const [planRide, setPlanRide]         = useState(null);
   const [schedules, setSchedules]   = useState({});
 
@@ -1095,6 +1218,7 @@ export default function App() {
       setLastRefresh(new Date());
       const rideOnly = all.filter(e=>!isShowEntity(e));
       saveHistory(rideOnly);
+      setDowntimes(updateDowntimes(rideOnly));
 
       // Also save park-wide crowd snapshot
       const operating = rideOnly.filter(r => r.status==="OPERATING" && r.queue?.STANDBY?.waitTime!=null);
@@ -1482,6 +1606,7 @@ export default function App() {
                     isHidden={!!hidden[ride.id]} onToggleHidden={()=>toggleHidden(ride.id)}
                     note={notes[ride.id]||""} onOpenNoteModal={()=>setNoteModal(ride)}
                     onAddToPlan={()=>{setPlanRide({name:ride.name,parkId:activePark,type:"ride"});setShowPlanner(true);}}
+                    downtime={downtimes[ride.id]}
                     T={T} dark={dark} />
                 ))}
               </>
@@ -1589,6 +1714,7 @@ export default function App() {
                           isHidden={false} onToggleHidden={()=>toggleHidden(ride.id)}
                           note={notes[ride.id]||""} onOpenNoteModal={()=>setNoteModal(ride)}
                           onAddToPlan={()=>{setPlanRide({name:ride.name,parkId:activePark,type:"ride"});setShowPlanner(true);}}
+                          downtime={downtimes[ride.id]}
                           T={T} dark={dark} />
                       ))}
                     </>
