@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import TrendChart from "./TrendChart.jsx";
 import CrowdTrend from "./CrowdTrend.jsx";
 import AuthScreen from "./AuthScreen.jsx";
@@ -80,6 +80,10 @@ const PARKS = {
         mapLat: 28.3574, mapLng: -81.5582 },
   ak: { name: "Animal Kingdom",    entityId: "1c84a229-8862-4648-9c71-378ddd2c7693", icon: "🦁", color: "#78350f", accent: "#d97706", accentLight: "#fef3c7", accentDark: "#451a03",
         mapLat: 28.3553, mapLng: -81.5901 },
+  tl: { name: "Typhoon Lagoon",    entityId: "b070cbc5-feaa-4b87-a8c1-f94cca037a18", icon: "🌊", color: "#164e63", accent: "#0891b2", accentLight: "#cffafe", accentDark: "#083344",
+        mapLat: 28.3643, mapLng: -81.5279, waterPark: true },
+  bb: { name: "Blizzard Beach",    entityId: "ead53ea5-22e5-4095-9a83-8c29300d7c63", icon: "⛄", color: "#1e3a5f", accent: "#3b82f6", accentLight: "#dbeafe", accentDark: "#1e3a5f",
+        mapLat: 28.3552, mapLng: -81.5766, waterPark: true },
 };
 
 // ── Manual thrill overrides (name lowercase → level) ─────────────────────────
@@ -118,6 +122,26 @@ const THRILL_OVERRIDES = {
   "alien swirling": "low",
   "saucers": "low",
   "star wars launch bay": "low",
+  // Water park slides
+  "summit plummet": "high",
+  "slush gusher": "high",
+  "teamboat springs": "medium",
+  "toboggan racers": "medium",
+  "run-off rapids": "medium",
+  "chair lift": "low",
+  "cross country creek": "low",
+  "tike's peak": "low",
+  "ski patrol": "low",
+  "crush 'n' gusher": "high",
+  "humunga kowabunga": "high",
+  "storm slides": "medium",
+  "mayday falls": "medium",
+  "gang plank falls": "medium",
+  "miss adventure falls": "medium",
+  "ketchakiddee creek": "low",
+  "castaway creek": "low",
+  "bay slides": "low",
+  "typhoon lagoon surf pool": "low",
   "turtle talk": "low",
   "turtle": "low",
 };
@@ -1416,11 +1440,16 @@ export default function App() {
 
         {/* Park switcher — always visible on mobile */}
         {!isDesktop && (
-          <div style={{ display:"flex",gap:6,overflowX:"auto",paddingBottom:12 }}>
+          <div style={{ display:"flex",gap:6,overflowX:"auto",paddingBottom:12,alignItems:"center" }}>
             {Object.entries(PARKS).map(([id,p]) => (
-              <button key={id} onClick={()=>{ setActivePark(id); setListCollapsed(false); }} style={{ background:activePark===id?"rgba(255,255,255,0.25)":"rgba(255,255,255,0.1)",color:"#fff",border:activePark===id?"1.5px solid rgba(255,255,255,0.5)":"1px solid rgba(255,255,255,0.15)",borderRadius:20,padding:"5px 14px",fontSize:12,fontWeight:activePark===id?700:400,cursor:"pointer",whiteSpace:"nowrap",fontFamily:FONT }}>
-                {p.icon} {id.toUpperCase()}
-              </button>
+              <React.Fragment key={id}>
+                {p.waterPark && id === "tl" && (
+                  <div style={{ width:1,height:24,background:"rgba(255,255,255,0.2)",flexShrink:0,margin:"0 2px" }} />
+                )}
+                <button onClick={()=>{ setActivePark(id); setListCollapsed(false); }} style={{ background:activePark===id?"rgba(255,255,255,0.25)":"rgba(255,255,255,0.1)",color:"#fff",border:activePark===id?"1.5px solid rgba(255,255,255,0.5)":"1px solid rgba(255,255,255,0.15)",borderRadius:20,padding:"5px 14px",fontSize:12,fontWeight:activePark===id?700:400,cursor:"pointer",whiteSpace:"nowrap",fontFamily:FONT }}>
+                  {p.icon} {p.waterPark ? p.name.split(" ")[0] : id.toUpperCase()}
+                </button>
+              </React.Fragment>
             ))}
           </div>
         )}

@@ -10,6 +10,8 @@ const PARKS = {
   ep: '47f90d2c-e191-4239-a466-5892ef59a88b',
   hs: '288747d1-8b4f-4a64-867e-ea7c9b27bad8',
   ak: '1c84a229-8862-4648-9c71-378ddd2c7693',
+  tl: 'b070cbc5-feaa-4b87-a8c1-f94cca037a18',
+  bb: 'ead53ea5-22e5-4095-9a83-8c29300d7c63',
 };
 
 const SHOW_KEYWORDS = [
