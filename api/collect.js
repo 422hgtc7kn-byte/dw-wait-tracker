@@ -4,6 +4,7 @@
 // Keys include season so like-for-like comparisons are accurate.
 
 import { getSeason } from './season.js';
+import { redisPipeline, updateDowntimes } from './_downtime.js';
 
 const PARKS = {
   mk: '75ea578a-adc8-4116-a54d-dccb60765ef9',
@@ -23,70 +24,6 @@ function isShow(entity) {
   if (entity.entityType === 'SHOW') return true;
   const n = (entity.name || '').toLowerCase();
   return SHOW_KEYWORDS.some(k => n.includes(k));
-}
-
-async function redisPipeline(commands) {
-  const url   = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!url || !token) throw new Error('Missing Upstash env vars');
-  const res = await fetch(url + '/pipeline', {
-    method: 'POST',
-    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-    body: JSON.stringify(commands),
-  });
-  if (!res.ok) throw new Error('Upstash error: ' + res.status);
-  return res.json();
-}
-
-const DOWNTIME_ACTIVE_KEY  = 'downtime:active';
-const DOWNTIME_HISTORY_KEY = 'downtime:history';
-const MAX_HISTORY_PER_RIDE = 15;
-
-// Detects DOWN/CLOSED transitions across all attractions (not just OPERATING
-// ones) and persists them in Redis, so an outage's start time is captured the
-// first time this job runs after it happens — regardless of whether anyone
-// has the app open.
-async function updateDowntimes(allRidesByPark) {
-  const now = Date.now();
-  const [activeRes, historyRes] = await redisPipeline([
-    ['GET', DOWNTIME_ACTIVE_KEY],
-    ['GET', DOWNTIME_HISTORY_KEY],
-  ]);
-
-  let active  = {};
-  let history = {};
-  try { active  = activeRes?.result  ? JSON.parse(activeRes.result)  : {}; } catch { active  = {}; }
-  try { history = historyRes?.result ? JSON.parse(historyRes.result) : {}; } catch { history = {}; }
-
-  let changed = false;
-
-  for (const [parkKey, rides] of Object.entries(allRidesByPark)) {
-    for (const ride of rides) {
-      const isDown = ride.status === 'DOWN' || ride.status === 'CLOSED';
-      const prev   = active[ride.id];
-
-      if (isDown && !prev) {
-        active[ride.id] = { name: ride.name, parkId: parkKey, since: now, status: ride.status };
-        changed = true;
-      } else if (isDown && prev && ride.status !== prev.status) {
-        active[ride.id] = { ...prev, status: ride.status };
-        changed = true;
-      } else if (!isDown && prev) {
-        const mins  = Math.round((now - prev.since) / 60000);
-        const entry = { since: prev.since, until: now, status: prev.status, mins };
-        history[ride.id] = [entry, ...(history[ride.id] || [])].slice(0, MAX_HISTORY_PER_RIDE);
-        delete active[ride.id];
-        changed = true;
-      }
-    }
-  }
-
-  if (changed) {
-    await redisPipeline([
-      ['SET', DOWNTIME_ACTIVE_KEY,  JSON.stringify(active)],
-      ['SET', DOWNTIME_HISTORY_KEY, JSON.stringify(history)],
-    ]);
-  }
 }
 
 export default async function handler(req, res) {

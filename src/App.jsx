@@ -514,6 +514,25 @@ async function fetchServerDowntimes() {
   }
 }
 
+// Called whenever the app fetches live park data (initial load, park switch,
+// manual refresh) — piggybacks that data onto the server-side downtime
+// tracker instead of waiting for the next 30-minute cron sweep, so accuracy
+// is near-instant while the app is actually open.
+async function pushDowntimeUpdate(parkKey, rides) {
+  try {
+    const res = await fetch("/api/downtimes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ parkId: parkKey, rides: rides.map(r => ({ id: r.id, name: r.name, status: r.status })) }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return mergeServerDowntimes(data.active, data.history);
+  } catch {
+    return null;
+  }
+}
+
 // ── RideCard ──────────────────────────────────────────────────────────────────
 function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleFavorite, alertThreshold, onSetAlert, isHidden, onToggleHidden, note, onOpenNoteModal, onAddToPlan, downtime, T, dark }) {
   const [expanded, setExpanded] = useState(false);
@@ -1273,6 +1292,7 @@ export default function App() {
       const rideOnly = all.filter(e=>!isShowEntity(e));
       saveHistory(rideOnly);
       setLocalDowntimes(updateLocalDowntimes(rideOnly));
+      pushDowntimeUpdate(parkKey, rideOnly).then(d => { if (d) setServerDowntimes(prev => ({ ...prev, ...d })); });
 
       // Also save park-wide crowd snapshot
       const operating = rideOnly.filter(r => r.status==="OPERATING" && r.queue?.STANDBY?.waitTime!=null);
