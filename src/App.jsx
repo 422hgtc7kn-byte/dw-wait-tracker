@@ -432,6 +432,35 @@ function saveLineHistory(h) {
   try { localStorage.setItem("dwt_line_history", JSON.stringify(h)); } catch {}
 }
 
+// Entities that report as ATTRACTION but never carry a real wait — galleries,
+// exhibits, walkthroughs. They're excluded from downtime tracking (both the
+// local fallback and the server push below) since there's no meaningful
+// "down" concept for them worth calling out. Keep in sync with the
+// NO_WAIT_NAMES list in api/collect.js.
+const NO_WAIT_NAMES = new Set([
+  'advanced training lab',
+  'american heritage gallery',
+  'awesome planet',
+  'bijutsu-kan gallery',
+  "bruce's shark world",
+  'gallery of arts and history',
+  'house of the whispering willows',
+  'imageworks - the "what if" labs',
+  'impressions de france',
+  'journey of water, inspired by moana',
+  'kidcot fun stops',
+  'mexico folk art gallery',
+  'palais du cinéma',
+  'project tomorrow: inventing the wonders of the future',
+  'seabase aquarium',
+  'stave church gallery',
+  'the american adventure',
+].map(n => n.toLowerCase()));
+
+function hasNoWait(ride) {
+  return NO_WAIT_NAMES.has((ride.name || '').toLowerCase());
+}
+
 // Downtime tracking has two layers:
 //  1. Server-side (api/collect.js, on the scheduled collection job) — authoritative.
 //     Its "since" reflects when the ride actually went down, not when the app was
@@ -1291,8 +1320,9 @@ export default function App() {
       setLastRefresh(new Date());
       const rideOnly = all.filter(e=>!isShowEntity(e));
       saveHistory(rideOnly);
-      setLocalDowntimes(updateLocalDowntimes(rideOnly));
-      pushDowntimeUpdate(parkKey, rideOnly).then(d => { if (d) setServerDowntimes(prev => ({ ...prev, ...d })); });
+      const trackableRides = rideOnly.filter(r => !hasNoWait(r));
+      setLocalDowntimes(updateLocalDowntimes(trackableRides));
+      pushDowntimeUpdate(parkKey, trackableRides).then(d => { if (d) setServerDowntimes(prev => ({ ...prev, ...d })); });
 
       // Also save park-wide crowd snapshot
       const operating = rideOnly.filter(r => r.status==="OPERATING" && r.queue?.STANDBY?.waitTime!=null);

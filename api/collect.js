@@ -26,6 +26,52 @@ function isShow(entity) {
   return SHOW_KEYWORDS.some(k => n.includes(k));
 }
 
+// Entities that come back as entityType "ATTRACTION" but aren't really rides
+// with a wait worth tracking — meet-and-greets, photo spots, playgrounds,
+// guided tours. Excluding these trims Redis writes and keeps the crowd-level
+// average from being skewed by things that don't behave like a queue.
+// Tune this list based on what actually shows up in your parks' live data —
+// it's a name-keyword match, same pattern as SHOW_KEYWORDS above.
+const NON_RIDE_KEYWORDS = [
+  'meet ', 'meet mickey', 'meet minnie', 'character', 'photo', 'photopass',
+  'autograph', 'fairytale hall', 'silly sideshow', 'town square theater',
+  'ariel\'s grotto', 'tinker bell', "tinkerbell",
+  'boneyard', 'splash \'n\' soak', 'splash n soak', 'playground', 'play area',
+  'exploration trail', 'discovery trail', 'wilderness explorer', 'conservation station',
+  'tour', 'keys to the kingdom', 'wild africa trek', 'backstage',
+];
+
+function isNonRide(entity) {
+  const n = (entity.name || '').toLowerCase();
+  if (NON_RIDE_KEYWORDS.some(k => n.includes(k))) return true;
+  return NO_WAIT_NAMES.has(n);
+}
+
+// Exact-name exclusions — galleries, exhibits, walkthroughs, and other
+// entities that report as ATTRACTION but never carry a real STANDBY wait.
+// Exact match (not keyword) since these are specific, known entities —
+// safer than a substring match for a list this precise. Add more here as
+// you spot them; names must match exactly (case-insensitive).
+const NO_WAIT_NAMES = new Set([
+  'advanced training lab',
+  'american heritage gallery',
+  'awesome planet',
+  'bijutsu-kan gallery',
+  "bruce's shark world",
+  'gallery of arts and history',
+  'house of the whispering willows',
+  'imageworks - the "what if" labs',
+  'impressions de france',
+  'journey of water, inspired by moana',
+  'kidcot fun stops',
+  'mexico folk art gallery',
+  'palais du cinéma',
+  'project tomorrow: inventing the wonders of the future',
+  'seabase aquarium',
+  'stave church gallery',
+  'the american adventure',
+].map(n => n.toLowerCase()));
+
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST' && req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
@@ -60,7 +106,7 @@ export default async function handler(req, res) {
 
       // All attractions regardless of status — used for downtime tracking
       const allRides = (data.liveData || []).filter(e =>
-        e.entityType === 'ATTRACTION' && !isShow(e)
+        e.entityType === 'ATTRACTION' && !isShow(e) && !isNonRide(e)
       );
       allRidesByPark[parkKey] = allRides;
 
