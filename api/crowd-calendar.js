@@ -5,7 +5,7 @@
 
 import { getSeason, SEASONS } from './season.js';
 
-const PARK_IDS = ["mk","ep","hs","ak","tl","bb"];
+const PARK_IDS = ["mk","ep","hs","ak"];
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
@@ -39,18 +39,6 @@ const BASELINES = {
     summer:  [48, 40, 32, 30, 36, 42, 54],
     holiday: [44, 36, 26, 24, 30, 38, 50],
     peak:    [62, 52, 44, 42, 48, 56, 68],
-  },
-  tl: {
-    value:   [20, 16, 12, 12, 14, 18, 26],
-    summer:  [38, 30, 24, 22, 28, 34, 46],
-    holiday: [28, 22, 16, 14, 18, 24, 34],
-    peak:    [52, 44, 36, 34, 40, 48, 60],
-  },
-  bb: {
-    value:   [22, 18, 14, 12, 16, 20, 28],
-    summer:  [40, 32, 26, 24, 30, 36, 48],
-    holiday: [30, 24, 18, 16, 20, 26, 36],
-    peak:    [54, 46, 38, 36, 42, 50, 62],
   },
 };
 

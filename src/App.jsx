@@ -80,10 +80,6 @@ const PARKS = {
         mapLat: 28.3574, mapLng: -81.5582 },
   ak: { name: "Animal Kingdom",    entityId: "1c84a229-8862-4648-9c71-378ddd2c7693", icon: "🦁", color: "#78350f", accent: "#d97706", accentLight: "#fef3c7", accentDark: "#451a03",
         mapLat: 28.3553, mapLng: -81.5901 },
-  tl: { name: "Typhoon Lagoon",    entityId: "b070cbc5-feaa-4b87-a8c1-f94cca037a18", icon: "🌊", color: "#164e63", accent: "#0891b2", accentLight: "#cffafe", accentDark: "#083344",
-        mapLat: 28.3643, mapLng: -81.5279, waterPark: true },
-  bb: { name: "Blizzard Beach",    entityId: "ead53ea5-22e5-4095-9a83-8c29300d7c63", icon: "⛄", color: "#1e3a5f", accent: "#3b82f6", accentLight: "#dbeafe", accentDark: "#1e3a5f",
-        mapLat: 28.3552, mapLng: -81.5766, waterPark: true },
 };
 
 // ── Manual thrill overrides (name lowercase → level) ─────────────────────────
@@ -437,53 +433,30 @@ function saveLineHistory(h) {
 }
 
 // Downtime tracking: { [rideId]: { name, since: ts, status, history: [{since, until, status, mins}] } }
-function loadDowntimes() {
-  try { return JSON.parse(localStorage.getItem("dwt_downtimes") || "{}"); } catch { return {}; }
-}
-function saveDowntimes(d) {
-  try { localStorage.setItem("dwt_downtimes", JSON.stringify(d)); } catch {}
-}
-
-// Call on each data refresh — detects transitions and updates downtime records
-function updateDowntimes(rides) {
-  const now      = Date.now();
-  const current  = loadDowntimes();
-  const updated  = { ...current };
-  let changed    = false;
-
-  for (const ride of rides) {
-    const isDown = ride.status === "DOWN" || ride.status === "CLOSED";
-    const prev   = updated[ride.id];
-
-    if (isDown && !prev?.since) {
-      // Ride just went down — start tracking
-      updated[ride.id] = {
-        name:    ride.name,
-        since:   now,
-        status:  ride.status,
-        history: prev?.history || [],
-      };
-      changed = true;
-    } else if (isDown && prev?.since && ride.status !== prev.status) {
-      // Status changed while still down (e.g. CLOSED → DOWN)
-      updated[ride.id] = { ...prev, status: ride.status };
-      changed = true;
-    } else if (!isDown && prev?.since) {
-      // Ride came back up — close out the outage
-      const mins = Math.round((now - prev.since) / 60000);
-      const entry = { since: prev.since, until: now, status: prev.status, mins };
-      updated[ride.id] = {
-        name:    ride.name,
-        since:   null,
-        status:  null,
-        history: [entry, ...(prev.history || [])].slice(0, 20),
-      };
-      changed = true;
-    }
+// Tracking itself happens server-side (api/collect.js, on the scheduled collection
+// job) so an outage's "since" reflects when the ride actually went down — not
+// whenever this app next happened to be opened. This just merges the server's
+// active + history maps into the per-ride shape the UI expects.
+function mergeDowntimes(active, history) {
+  const merged = {};
+  for (const [id, a] of Object.entries(active || {})) {
+    merged[id] = { name: a.name, since: a.since, status: a.status, history: history?.[id] || [] };
   }
+  for (const [id, h] of Object.entries(history || {})) {
+    if (!merged[id]) merged[id] = { name: null, since: null, status: null, history: h };
+  }
+  return merged;
+}
 
-  if (changed) saveDowntimes(updated);
-  return updated;
+async function fetchDowntimes() {
+  try {
+    const res = await fetch("/api/downtimes");
+    if (!res.ok) return {};
+    const data = await res.json();
+    return mergeDowntimes(data.active, data.history);
+  } catch {
+    return {};
+  }
 }
 
 // ── RideCard ──────────────────────────────────────────────────────────────────
@@ -1157,7 +1130,7 @@ export default function App() {
   const [showPlanner, setShowPlanner]     = useState(false);
   const [showAccuracy, setShowAccuracy]   = useState(false);
   const [showPredictor, setShowPredictor] = useState(false);
-  const [downtimes, setDowntimes]         = useState(() => loadDowntimes());
+  const [downtimes, setDowntimes]         = useState({});
   const [planRide, setPlanRide]         = useState(null);
   const [schedules, setSchedules]   = useState({});
 
@@ -1242,7 +1215,6 @@ export default function App() {
       setLastRefresh(new Date());
       const rideOnly = all.filter(e=>!isShowEntity(e));
       saveHistory(rideOnly);
-      setDowntimes(updateDowntimes(rideOnly));
 
       // Also save park-wide crowd snapshot
       const operating = rideOnly.filter(r => r.status==="OPERATING" && r.queue?.STANDBY?.waitTime!=null);
@@ -1268,6 +1240,17 @@ export default function App() {
   }, [alerts]);
 
   useEffect(() => { if (!ridesData[activePark]) fetchParkData(activePark); }, [activePark, fetchParkData, ridesData]);
+
+  // Downtime state is tracked server-side (api/collect.js), so pull it in on
+  // mount and periodically — this reflects real outage start times rather
+  // than whenever this app instance happened to be open.
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => fetchDowntimes().then(d => { if (!cancelled) setDowntimes(d); });
+    load();
+    const id = setInterval(load, 5 * 60000); // refresh every 5 minutes
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
 
   // Fetch park schedule when park changes
   useEffect(() => {
@@ -1442,14 +1425,9 @@ export default function App() {
         {!isDesktop && (
           <div style={{ display:"flex",gap:6,overflowX:"auto",paddingBottom:12,alignItems:"center" }}>
             {Object.entries(PARKS).map(([id,p]) => (
-              <React.Fragment key={id}>
-                {p.waterPark && id === "tl" && (
-                  <div style={{ width:1,height:24,background:"rgba(255,255,255,0.2)",flexShrink:0,margin:"0 2px" }} />
-                )}
-                <button onClick={()=>{ setActivePark(id); setListCollapsed(false); }} style={{ background:activePark===id?"rgba(255,255,255,0.25)":"rgba(255,255,255,0.1)",color:"#fff",border:activePark===id?"1.5px solid rgba(255,255,255,0.5)":"1px solid rgba(255,255,255,0.15)",borderRadius:20,padding:"5px 14px",fontSize:12,fontWeight:activePark===id?700:400,cursor:"pointer",whiteSpace:"nowrap",fontFamily:FONT }}>
-                  {p.icon} {p.waterPark ? p.name.split(" ")[0] : id.toUpperCase()}
-                </button>
-              </React.Fragment>
+              <button key={id} onClick={()=>{ setActivePark(id); setListCollapsed(false); }} style={{ background:activePark===id?"rgba(255,255,255,0.25)":"rgba(255,255,255,0.1)",color:"#fff",border:activePark===id?"1.5px solid rgba(255,255,255,0.5)":"1px solid rgba(255,255,255,0.15)",borderRadius:20,padding:"5px 14px",fontSize:12,fontWeight:activePark===id?700:400,cursor:"pointer",whiteSpace:"nowrap",fontFamily:FONT }}>
+                {p.icon} {id.toUpperCase()}
+              </button>
             ))}
           </div>
         )}

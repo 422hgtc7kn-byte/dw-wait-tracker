@@ -10,8 +10,6 @@ const PARKS = {
   ep: '47f90d2c-e191-4239-a466-5892ef59a88b',
   hs: '288747d1-8b4f-4a64-867e-ea7c9b27bad8',
   ak: '1c84a229-8862-4648-9c71-378ddd2c7693',
-  tl: 'b070cbc5-feaa-4b87-a8c1-f94cca037a18',
-  bb: 'ead53ea5-22e5-4095-9a83-8c29300d7c63',
 };
 
 const SHOW_KEYWORDS = [
@@ -40,6 +38,57 @@ async function redisPipeline(commands) {
   return res.json();
 }
 
+const DOWNTIME_ACTIVE_KEY  = 'downtime:active';
+const DOWNTIME_HISTORY_KEY = 'downtime:history';
+const MAX_HISTORY_PER_RIDE = 15;
+
+// Detects DOWN/CLOSED transitions across all attractions (not just OPERATING
+// ones) and persists them in Redis, so an outage's start time is captured the
+// first time this job runs after it happens — regardless of whether anyone
+// has the app open.
+async function updateDowntimes(allRidesByPark) {
+  const now = Date.now();
+  const [activeRes, historyRes] = await redisPipeline([
+    ['GET', DOWNTIME_ACTIVE_KEY],
+    ['GET', DOWNTIME_HISTORY_KEY],
+  ]);
+
+  let active  = {};
+  let history = {};
+  try { active  = activeRes?.result  ? JSON.parse(activeRes.result)  : {}; } catch { active  = {}; }
+  try { history = historyRes?.result ? JSON.parse(historyRes.result) : {}; } catch { history = {}; }
+
+  let changed = false;
+
+  for (const [parkKey, rides] of Object.entries(allRidesByPark)) {
+    for (const ride of rides) {
+      const isDown = ride.status === 'DOWN' || ride.status === 'CLOSED';
+      const prev   = active[ride.id];
+
+      if (isDown && !prev) {
+        active[ride.id] = { name: ride.name, parkId: parkKey, since: now, status: ride.status };
+        changed = true;
+      } else if (isDown && prev && ride.status !== prev.status) {
+        active[ride.id] = { ...prev, status: ride.status };
+        changed = true;
+      } else if (!isDown && prev) {
+        const mins  = Math.round((now - prev.since) / 60000);
+        const entry = { since: prev.since, until: now, status: prev.status, mins };
+        history[ride.id] = [entry, ...(history[ride.id] || [])].slice(0, MAX_HISTORY_PER_RIDE);
+        delete active[ride.id];
+        changed = true;
+      }
+    }
+  }
+
+  if (changed) {
+    await redisPipeline([
+      ['SET', DOWNTIME_ACTIVE_KEY,  JSON.stringify(active)],
+      ['SET', DOWNTIME_HISTORY_KEY, JSON.stringify(history)],
+    ]);
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST' && req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
@@ -62,8 +111,9 @@ export default async function handler(req, res) {
   const MAX_RIDE  = 52;
   const MAX_CROWD = 52;
 
-  const results  = { parks: {}, rideSnapshots: 0, crowdSnapshots: 0, errors: [], season };
-  const commands = [];
+  const results        = { parks: {}, rideSnapshots: 0, crowdSnapshots: 0, errors: [], season };
+  const commands        = [];
+  const allRidesByPark  = {};
 
   for (const [parkKey, entityId] of Object.entries(PARKS)) {
     try {
@@ -71,11 +121,14 @@ export default async function handler(req, res) {
       if (!apiRes.ok) throw new Error('API error ' + apiRes.status);
       const data = await apiRes.json();
 
-      const rides = (data.liveData || []).filter(e =>
-        e.entityType === 'ATTRACTION' &&
-        !isShow(e) &&
-        e.status === 'OPERATING' &&
-        e.queue?.STANDBY?.waitTime != null
+      // All attractions regardless of status — used for downtime tracking
+      const allRides = (data.liveData || []).filter(e =>
+        e.entityType === 'ATTRACTION' && !isShow(e)
+      );
+      allRidesByPark[parkKey] = allRides;
+
+      const rides = allRides.filter(e =>
+        e.status === 'OPERATING' && e.queue?.STANDBY?.waitTime != null
       );
 
       // Per-ride snapshots — keyed by season + dow + hour
@@ -105,6 +158,13 @@ export default async function handler(req, res) {
   }
 
   if (commands.length > 0) await redisPipeline(commands);
+
+  try {
+    await updateDowntimes(allRidesByPark);
+  } catch (err) {
+    console.error('Downtime update error:', err);
+    results.errors.push({ park: 'downtime', error: err.message });
+  }
 
   console.log('Collect run:', now.toISOString(), { season, dow, etHour, ...results });
   return res.status(200).json({ ok: true, ts: now.toISOString(), etHour, dow, season, ...results });
