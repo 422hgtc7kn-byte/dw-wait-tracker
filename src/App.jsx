@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import TrendChart from "./TrendChart.jsx";
 import CrowdTrend from "./CrowdTrend.jsx";
 import AuthScreen from "./AuthScreen.jsx";
@@ -432,12 +432,67 @@ function saveLineHistory(h) {
   try { localStorage.setItem("dwt_line_history", JSON.stringify(h)); } catch {}
 }
 
-// Downtime tracking: { [rideId]: { name, since: ts, status, history: [{since, until, status, mins}] } }
-// Tracking itself happens server-side (api/collect.js, on the scheduled collection
-// job) so an outage's "since" reflects when the ride actually went down — not
-// whenever this app next happened to be opened. This just merges the server's
-// active + history maps into the per-ride shape the UI expects.
-function mergeDowntimes(active, history) {
+// Downtime tracking has two layers:
+//  1. Server-side (api/collect.js, on the scheduled collection job) — authoritative.
+//     Its "since" reflects when the ride actually went down, not when the app was
+//     opened, but it only updates on the ~30-minute collection cadence, so a brand
+//     new outage can take a while to show up here.
+//  2. A lightweight client-side fallback (localStorage) that starts a timer the
+//     moment *this* browser sees the ride go DOWN/CLOSED, so the UI shows
+//     something immediately. Once the server catches up with the real (usually
+//     earlier or equal) timestamp, the server value wins.
+function loadLocalDowntimes() {
+  try { return JSON.parse(localStorage.getItem("dwt_downtimes_local") || "{}"); } catch { return {}; }
+}
+function saveLocalDowntimes(d) {
+  try { localStorage.setItem("dwt_downtimes_local", JSON.stringify(d)); } catch {}
+}
+
+// Call on each data refresh — detects transitions and updates the local fallback records
+function updateLocalDowntimes(rides) {
+  const now     = Date.now();
+  const current = loadLocalDowntimes();
+  const updated = { ...current };
+  let changed   = false;
+
+  for (const ride of rides) {
+    const isDown = ride.status === "DOWN" || ride.status === "CLOSED";
+    const prev   = updated[ride.id];
+
+    if (isDown && !prev?.since) {
+      updated[ride.id] = { name: ride.name, since: now, status: ride.status, history: prev?.history || [] };
+      changed = true;
+    } else if (isDown && prev?.since && ride.status !== prev.status) {
+      updated[ride.id] = { ...prev, status: ride.status };
+      changed = true;
+    } else if (!isDown && prev?.since) {
+      const mins  = Math.round((now - prev.since) / 60000);
+      const entry = { since: prev.since, until: now, status: prev.status, mins };
+      updated[ride.id] = { name: ride.name, since: null, status: null, history: [entry, ...(prev.history || [])].slice(0, 10) };
+      changed = true;
+    }
+  }
+
+  if (changed) saveLocalDowntimes(updated);
+  return updated;
+}
+
+// Merge server (authoritative) + local (instant fallback) downtime sources.
+function mergeDowntimeSources(server, local) {
+  const ids = new Set([...Object.keys(server || {}), ...Object.keys(local || {})]);
+  const merged = {};
+  for (const id of ids) {
+    const s = server?.[id];
+    const l = local?.[id];
+    const since   = s?.since  ?? l?.since  ?? null;
+    const status  = s?.status ?? l?.status ?? null;
+    const history = (s?.history?.length ? s.history : l?.history) || [];
+    merged[id] = { name: s?.name ?? l?.name ?? null, since, status, history };
+  }
+  return merged;
+}
+
+function mergeServerDowntimes(active, history) {
   const merged = {};
   for (const [id, a] of Object.entries(active || {})) {
     merged[id] = { name: a.name, since: a.since, status: a.status, history: history?.[id] || [] };
@@ -448,12 +503,12 @@ function mergeDowntimes(active, history) {
   return merged;
 }
 
-async function fetchDowntimes() {
+async function fetchServerDowntimes() {
   try {
     const res = await fetch("/api/downtimes");
     if (!res.ok) return {};
     const data = await res.json();
-    return mergeDowntimes(data.active, data.history);
+    return mergeServerDowntimes(data.active, data.history);
   } catch {
     return {};
   }
@@ -1130,7 +1185,9 @@ export default function App() {
   const [showPlanner, setShowPlanner]     = useState(false);
   const [showAccuracy, setShowAccuracy]   = useState(false);
   const [showPredictor, setShowPredictor] = useState(false);
-  const [downtimes, setDowntimes]         = useState({});
+  const [serverDowntimes, setServerDowntimes] = useState({});
+  const [localDowntimes, setLocalDowntimes]   = useState(() => loadLocalDowntimes());
+  const downtimes = useMemo(() => mergeDowntimeSources(serverDowntimes, localDowntimes), [serverDowntimes, localDowntimes]);
   const [planRide, setPlanRide]         = useState(null);
   const [schedules, setSchedules]   = useState({});
 
@@ -1215,6 +1272,7 @@ export default function App() {
       setLastRefresh(new Date());
       const rideOnly = all.filter(e=>!isShowEntity(e));
       saveHistory(rideOnly);
+      setLocalDowntimes(updateLocalDowntimes(rideOnly));
 
       // Also save park-wide crowd snapshot
       const operating = rideOnly.filter(r => r.status==="OPERATING" && r.queue?.STANDBY?.waitTime!=null);
@@ -1246,7 +1304,7 @@ export default function App() {
   // than whenever this app instance happened to be open.
   useEffect(() => {
     let cancelled = false;
-    const load = () => fetchDowntimes().then(d => { if (!cancelled) setDowntimes(d); });
+    const load = () => fetchServerDowntimes().then(d => { if (!cancelled) setServerDowntimes(d); });
     load();
     const id = setInterval(load, 5 * 60000); // refresh every 5 minutes
     return () => { cancelled = true; clearInterval(id); };
