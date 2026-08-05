@@ -5,7 +5,14 @@
 //   while the app is open, on top of the 30-minute cron sweep that covers
 //   outages that happen while nobody's looking.
 
-import { redisPipeline, updateDowntimes, DOWNTIME_ACTIVE_KEY, DOWNTIME_HISTORY_KEY } from './_downtime.js';
+import { redisPipeline, updateDowntimes, isParkOpenNow, DOWNTIME_ACTIVE_KEY, DOWNTIME_HISTORY_KEY } from './_downtime.js';
+
+const PARK_ENTITY_IDS = {
+  mk: '75ea578a-adc8-4116-a54d-dccb60765ef9',
+  ep: '47f90d2c-e191-4239-a466-5892ef59a88b',
+  hs: '288747d1-8b4f-4a64-867e-ea7c9b27bad8',
+  ak: '1c84a229-8862-4648-9c71-378ddd2c7693',
+};
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -49,7 +56,11 @@ export default async function handler(req, res) {
         .filter(r => r && r.id && r.status)
         .map(r => ({ id: r.id, name: r.name, status: r.status }));
 
-      const { active, history } = await updateDowntimes({ [parkId]: cleaned });
+      const entityId = PARK_ENTITY_IDS[parkId];
+      const parkOpen = entityId ? await isParkOpenNow(entityId) : true;
+      const forUpdate = parkOpen ? cleaned : [];
+
+      const { active, history } = await updateDowntimes({ [parkId]: forUpdate });
       return res.status(200).json({ ok: true, active, history });
     } catch (err) {
       console.error('Downtimes POST error:', err);

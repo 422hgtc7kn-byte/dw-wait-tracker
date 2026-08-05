@@ -4,7 +4,7 @@
 // Keys include season so like-for-like comparisons are accurate.
 
 import { getSeason } from './season.js';
-import { redisPipeline, updateDowntimes } from './_downtime.js';
+import { redisPipeline, updateDowntimes, isParkOpenNow } from './_downtime.js';
 
 const PARKS = {
   mk: '75ea578a-adc8-4116-a54d-dccb60765ef9',
@@ -70,6 +70,15 @@ const NO_WAIT_NAMES = new Set([
   'seabase aquarium',
   'stave church gallery',
   'the american adventure',
+  'walt disney presents',
+  'animal care at conservation station',
+  'discovery island trails',
+  'the oasis exhibits',
+  'tree of life',
+  'wilderness explorers',
+  'main street vehicles',
+  'cinderella castle',
+  "casey jr. splash 'n' soak station",
 ].map(n => n.toLowerCase()));
 
 export default async function handler(req, res) {
@@ -104,11 +113,16 @@ export default async function handler(req, res) {
       if (!apiRes.ok) throw new Error('API error ' + apiRes.status);
       const data = await apiRes.json();
 
-      // All attractions regardless of status — used for downtime tracking
+      // All attractions regardless of status — used for downtime tracking.
+      // Only relevant while the park is actually open — a CLOSED status means
+      // something different overnight than it does mid-day, so we skip
+      // downtime detection entirely for a park that's currently closed rather
+      // than misread "the park is closed" as "every ride just broke."
       const allRides = (data.liveData || []).filter(e =>
         e.entityType === 'ATTRACTION' && !isShow(e) && !isNonRide(e)
       );
-      allRidesByPark[parkKey] = allRides;
+      const parkOpen = await isParkOpenNow(entityId);
+      allRidesByPark[parkKey] = parkOpen ? allRides : [];
 
       const rides = allRides.filter(e =>
         e.status === 'OPERATING' && e.queue?.STANDBY?.waitTime != null
