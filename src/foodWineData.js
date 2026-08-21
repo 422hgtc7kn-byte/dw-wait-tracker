@@ -67,6 +67,7 @@ export const FESTIVAL_BOOTHS = [
     items: [
       { id: "connections-eatery--bbq-braai-chicken-pizza", name: "BBQ Braai Chicken Pizza", price: "$12.29", desc: "Two pizza slices topped with tamarind barbecue, arugula, cheese, onions, and piri piri sauce." },
       { id: "connections-eatery--caramel-apple-cheesecake-baumkuchen", name: "Caramel-Apple Cheesecake Baumkuchen", price: "$6.49", desc: "Layered German-style cake with caramel-apple cheesecake flavors." },
+      { id: "connections-eatery--frozen-waffle-old-fashioned", name: "Frozen Waffle Old Fashioned", price: "$17.50", desc: "A frozen blend of Maker’s Mark Kentucky Straight Bourbon Whisky, maple syrup, butterscotch syrup, and angostura bitters topped with a liege waffle and cherry" },
     ],
   },
   {
