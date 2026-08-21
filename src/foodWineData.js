@@ -43,6 +43,7 @@ export const FESTIVAL_BOOTHS = [
       { id: "festival-favorites--potato-pierogi", name: "Potato Pierogi", price: "$5.99", desc: "Potato-filled pierogi served with kielbasa, caramelized onions, and sour cream." },
       { id: "festival-favorites--bo-ssam-pork-belly-lettuce-wraps", name: "Bo Ssam Pork Belly Lettuce Wraps", price: "$6.19", desc: "Tender bo ssam-style pork belly with kimchi slaw and spicy aioli, served as lettuce wraps." },
       { id: "festival-favorites--pumpkin-cheesecake-mousse-trifle", name: "Pumpkin Cheesecake Mousse Trifle", price: "$5.29", desc: "Layers of pumpkin cheesecake mousse, citrus sauce, and spiced cake finished with cranberry streusel." },
+      { id: "festival-favorites--frozen-S-mores", name: "Frozen S'-'mores", price: "$5.29", desc: "Chocolate Milk Shake with Marshmallow Syrup topped with Mini Marshmallows, Chocolate Shavings, and a Graham Cracker (non-alcoholic)" },
     ],
   },
   {
