@@ -48,17 +48,16 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "POST") {
-    const { favorites, alerts, hidden, dark, sortBy } = req.body || {};
-    const profile = {
-      favorites: favorites || {},
-      alerts:    alerts    || {},
-      hidden:    hidden    || {},
-      dark:      dark      || false,
-      sortBy:    sortBy    || "wait_asc",
-      updatedAt: Date.now(),
-    };
+    // Merge shallowly rather than overwrite — each feature (ride favorites,
+    // day planner, food & wine tracking, etc.) only sends the fields it
+    // owns, and previously this replaced the whole profile object, so
+    // saving one feature's data would silently wipe out every other
+    // feature's synced state.
+    const updates  = req.body || {};
+    const existing = await redisGet(`profile:${username}`) || {};
+    const profile  = { ...existing, ...updates, updatedAt: Date.now() };
     await redisSet(`profile:${username}`, profile);
-    return res.status(200).json({ ok: true });
+    return res.status(200).json({ ok: true, profile });
   }
 
   return res.status(405).json({ error: "Method not allowed" });
