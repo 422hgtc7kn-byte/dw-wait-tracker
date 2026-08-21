@@ -5,6 +5,7 @@ import AuthScreen from "./AuthScreen.jsx";
 import TripPredictor from "./TripPredictor.jsx";
 import CrowdCalendar from "./CrowdCalendar.jsx";
 import DayPlanner from "./DayPlanner.jsx";
+import FoodWine from "./FoodWine.jsx";
 import { getRideDetails, fmtHeight } from "./rideDetails.js";
 import { bestHours, PARK_OPEN_HOUR, HOUR_LABELS, mergeWithTypical } from "./trends.js";
 import { getETHour, getETDay } from "./etHour.js";
@@ -562,15 +563,41 @@ async function pushDowntimeUpdate(parkKey, rides) {
   }
 }
 
+// The "Time my wait" stopwatch — persisted so a running timer survives a
+// page refresh, park switch, or the browser backgrounding the tab, not just
+// component memory. Keyed by ride id; only one entry per ride can run at a
+// time (starting again just overwrites it).
+function loadActiveTimers() {
+  try { return JSON.parse(localStorage.getItem("dwt_active_timers") || "{}"); } catch { return {}; }
+}
+function saveActiveTimerStart(rideId, startTs) {
+  try {
+    const all = loadActiveTimers();
+    all[rideId] = startTs;
+    localStorage.setItem("dwt_active_timers", JSON.stringify(all));
+  } catch {}
+}
+function clearActiveTimerStart(rideId) {
+  try {
+    const all = loadActiveTimers();
+    delete all[rideId];
+    localStorage.setItem("dwt_active_timers", JSON.stringify(all));
+  } catch {}
+}
+
 // ── RideCard ──────────────────────────────────────────────────────────────────
 function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleFavorite, alertThreshold, onSetAlert, isHidden, onToggleHidden, note, onOpenNoteModal, onAddToPlan, downtime, T, dark }) {
   const [expanded, setExpanded] = useState(false);
   const [trendData, setTrendData] = useState(null);
   const [trendLoading, setTrendLoading] = useState(false);
 
-  // Line timer state
-  const [timerStart, setTimerStart]   = useState(null);   // Date when timer started
-  const [elapsed, setElapsed]         = useState(0);       // seconds
+  // Line timer state — initialized from localStorage so a page refresh or
+  // remount doesn't lose a timer that's already running for this ride.
+  const [timerStart, setTimerStart]   = useState(() => loadActiveTimers()[ride.id] || null);
+  const [elapsed, setElapsed]         = useState(() => {
+    const start = loadActiveTimers()[ride.id];
+    return start ? Math.floor((Date.now() - start) / 1000) : 0;
+  });
   const [lineHistory, setLineHistory] = useState(() => loadLineHistory());
   const timerRef = useRef(null);
   const myHistory = lineHistory[ride.id] || [];
@@ -587,7 +614,12 @@ function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleF
     return () => clearInterval(timerRef.current);
   }, [timerStart]);
 
-  function startTimer() { setTimerStart(Date.now()); setElapsed(0); }
+  function startTimer() {
+    const now = Date.now();
+    setTimerStart(now);
+    setElapsed(0);
+    saveActiveTimerStart(ride.id, now);
+  }
 
   function stopTimer() {
     if (!timerStart) return;
@@ -598,7 +630,31 @@ function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleF
     saveLineHistory(updated);
     setTimerStart(null);
     setElapsed(0);
+    clearActiveTimerStart(ride.id);
   }
+
+  // Cancel requires a second tap to confirm — arms a short-lived "are you
+  // sure" state rather than discarding immediately, and auto-disarms after
+  // a few seconds if left untouched so it doesn't linger indefinitely.
+  const [cancelConfirm, setCancelConfirm] = useState(false);
+  const cancelConfirmTimeoutRef = useRef(null);
+
+  function armCancelConfirm() {
+    setCancelConfirm(true);
+    clearTimeout(cancelConfirmTimeoutRef.current);
+    cancelConfirmTimeoutRef.current = setTimeout(() => setCancelConfirm(false), 5000);
+  }
+  function disarmCancelConfirm() {
+    setCancelConfirm(false);
+    clearTimeout(cancelConfirmTimeoutRef.current);
+  }
+  function discardTimer() {
+    setTimerStart(null);
+    setElapsed(0);
+    clearActiveTimerStart(ride.id);
+    disarmCancelConfirm();
+  }
+  useEffect(() => () => clearTimeout(cancelConfirmTimeoutRef.current), []);
 
   function clearHistory() {
     const updated = { ...lineHistory };
@@ -701,16 +757,41 @@ function RideCard({ ride, accent, accentLight, accentDark, isFavorite, onToggleF
       {/* Line timer button — always on card face for operating rides */}
       {isOperating && (
         timerStart ? (
-          <div style={{ display:"flex",alignItems:"center",gap:8,padding:"10px 14px",borderRadius:12,marginTop:10,background:dark?"#3b0a0a":"#fee2e2",border:`1.5px solid ${dark?"#ef4444":"#fca5a5"}` }}>
-            <div style={{ flex:1 }}>
-              <div style={{ color:dark?"#f87171":"#dc2626",fontSize:20,fontWeight:800,fontFamily:FONT,letterSpacing:1 }}>{fmtElapsed(elapsed)}</div>
-              <div style={{ color:dark?"#fca5a5":"#9f1239",fontSize:11,fontFamily:FONT }}>⏱ In line now…</div>
-            </div>
-            <button
-              onClick={e=>{e.stopPropagation();stopTimer();}}
-              style={{ background:"#dc2626",border:"none",borderRadius:10,padding:"8px 18px",color:"#fff",fontFamily:FONT,fontWeight:700,fontSize:13,cursor:"pointer",flexShrink:0 }}>
-              ✓ Done
-            </button>
+          <div style={{ padding:"10px 14px",borderRadius:12,marginTop:10,background:dark?"#3b0a0a":"#fee2e2",border:`1.5px solid ${dark?"#ef4444":"#fca5a5"}` }}>
+            {!cancelConfirm ? (
+              <div style={{ display:"flex",alignItems:"center",gap:8 }}>
+                <div style={{ flex:1 }}>
+                  <div style={{ color:dark?"#f87171":"#dc2626",fontSize:20,fontWeight:800,fontFamily:FONT,letterSpacing:1 }}>{fmtElapsed(elapsed)}</div>
+                  <div style={{ color:dark?"#fca5a5":"#9f1239",fontSize:11,fontFamily:FONT }}>⏱ In line now…</div>
+                </div>
+                <button
+                  onClick={e=>{e.stopPropagation();armCancelConfirm();}}
+                  style={{ background:"none",border:`1.5px solid ${dark?"#7f1d1d":"#fca5a5"}`,borderRadius:10,padding:"8px 14px",color:dark?"#fca5a5":"#9f1239",fontFamily:FONT,fontWeight:700,fontSize:13,cursor:"pointer",flexShrink:0 }}>
+                  ✕ Cancel
+                </button>
+                <button
+                  onClick={e=>{e.stopPropagation();stopTimer();}}
+                  style={{ background:"#dc2626",border:"none",borderRadius:10,padding:"8px 18px",color:"#fff",fontFamily:FONT,fontWeight:700,fontSize:13,cursor:"pointer",flexShrink:0 }}>
+                  ✓ Done
+                </button>
+              </div>
+            ) : (
+              <div style={{ display:"flex",alignItems:"center",gap:8 }}>
+                <div style={{ flex:1,color:dark?"#fca5a5":"#9f1239",fontSize:12,fontWeight:700,fontFamily:FONT,lineHeight:1.3 }}>
+                  Discard this timer? It won't be saved.
+                </div>
+                <button
+                  onClick={e=>{e.stopPropagation();disarmCancelConfirm();}}
+                  style={{ background:"none",border:`1.5px solid ${dark?"#7f1d1d":"#fca5a5"}`,borderRadius:10,padding:"8px 12px",color:dark?"#fca5a5":"#9f1239",fontFamily:FONT,fontWeight:700,fontSize:12,cursor:"pointer",flexShrink:0 }}>
+                  Keep going
+                </button>
+                <button
+                  onClick={e=>{e.stopPropagation();discardTimer();}}
+                  style={{ background:"#dc2626",border:"none",borderRadius:10,padding:"8px 14px",color:"#fff",fontFamily:FONT,fontWeight:700,fontSize:12,cursor:"pointer",flexShrink:0 }}>
+                  Discard
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           <button
@@ -1231,6 +1312,7 @@ export default function App() {
   const [showMap, setShowMap]           = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
   const [showPlanner, setShowPlanner]     = useState(false);
+  const [showFoodWine, setShowFoodWine]   = useState(false);
   const [showAccuracy, setShowAccuracy]   = useState(false);
   const [showPredictor, setShowPredictor] = useState(false);
   const [serverDowntimes, setServerDowntimes] = useState({});
@@ -1502,6 +1584,7 @@ export default function App() {
       {showMap && <MapModal park={park} onClose={()=>setShowMap(false)} T={T} dark={dark} />}
       {showCalendar && <CrowdCalendar T={T} dark={dark} accent={park.accent} accentLight={park.accentLight} accentDark={park.accentDark} onClose={()=>setShowCalendar(false)} />}
       {showPlanner && <DayPlanner T={T} dark={dark} accent={park.accent} accentLight={park.accentLight} accentDark={park.accentDark} parks={ridesData} onClose={()=>{setShowPlanner(false);setPlanRide(null);}} token={token} prefill={planRide} activeParkId={activePark} />}
+      {showFoodWine && <FoodWine T={T} dark={dark} accent={park.accent} accentLight={park.accentLight} accentDark={park.accentDark} onClose={()=>setShowFoodWine(false)} token={token} />}
       {showAccuracy && <WaitAccuracy T={T} dark={dark} accent={park.accent} accentLight={park.accentLight} accentDark={park.accentDark} onClose={()=>setShowAccuracy(false)} />}
       {showPredictor && <TripPredictor T={T} dark={dark} accent={park.accent} accentLight={park.accentLight} accentDark={park.accentDark} onClose={()=>setShowPredictor(false)} />}
 
@@ -1589,6 +1672,7 @@ export default function App() {
               <button onClick={()=>setShowPredictor(true)} title="Trip Predictor" style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>🔮</button>
               <button onClick={()=>setShowCalendar(true)} title="Crowd Calendar" style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>📅</button>
               <button onClick={()=>setShowPlanner(true)} title="Day Planner" style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>📋</button>
+              <button onClick={()=>setShowFoodWine(true)} title="Food & Wine Festival" style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>🍷</button>
               <a href="https://disneyworld.disney.go.com/app/" target="_blank" rel="noreferrer"
                 style={{ background:"rgba(255,255,255,0.15)",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,textDecoration:"none",display:"inline-flex",alignItems:"center" }}>🏰</a>
               <button onClick={()=>setDark(d=>!d)} style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:10,padding:"6px 10px",color:"#fff",fontSize:15,cursor:"pointer" }}>
